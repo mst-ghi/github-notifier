@@ -1,0 +1,62 @@
+/*
+ * Styles for the custom window decorations.
+ *
+ * These live in a plain stylesheet rather than in the Chakra theme because
+ * `-webkit-app-region` is an Electron-only property that Chakra's
+ * `SystemStyleObject` does not model.
+ */
+
+.window-drag {
+  -webkit-app-region: drag;
+  /* Dragging the window should never start a text selection. */
+  user-select: none;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * A drag region swallows pointer events, so anything interactive inside the
+ * titlebar has to opt back out.
+ */
+.window-drag button,
+.window-drag input,
+.window-drag select,
+.window-drag a,
+.window-drag [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  cursor: default;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.window-control:hover {
+  background-color: rgba(127, 127, 127, 0.18);
+  opacity: 1;
+}
+
+.window-control:active {
+  background-color: rgba(127, 127, 127, 0.28);
+}
+
+.window-control--danger:hover,
+.window-control--danger:active {
+  background-color: #e5484d;
+  color: #ffffff;
+  opacity: 1;
+}

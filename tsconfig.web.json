@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "useDefineForClassFields": true
+  },
+  "include": ["src/renderer/**/*", "src/shared/**/*", "vite.config.ts"],
+  "exclude": ["node_modules", "dist", "src/main", "src/daemon", "src/core"]
+}

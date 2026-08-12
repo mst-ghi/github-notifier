@@ -1,0 +1,58 @@
+[Unit]
+Description=GitHub Notifier background service (webhooks, polling, desktop notifications)
+Documentation=https://github.com/mostafa/github-notifier
+# Best-effort ordering only: this is a user unit, so it must not hard-depend on
+# a system service it cannot see.
+After=graphical-session.target network-online.target
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+
+# The daemon runs on Electron's bundled Node so the .deb needs no separate
+# nodejs package, and so it can read the app out of the asar archive.
+Environment=ELECTRON_RUN_AS_NODE=1
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+# Override these with: systemctl --user edit github-notifier
+Environment=MONGO_URI=mongodb://mostafa:Mostafa123@localhost:27017
+Environment=MONGO_DB=github_notifier
+
+ExecStart=/opt/GitHub Notifier/github-notifier /opt/GitHub Notifier/resources/app.asar/dist/daemon/index.js
+
+# Notifications and the keyring both need the session bus. systemd user
+# services normally inherit it; this makes the dependency explicit.
+ExecStartPre=/bin/sh -c 'test -n "$DBUS_SESSION_BUS_ADDRESS" || echo "warning: no session bus, desktop notifications may not appear"'
+
+Restart=on-failure
+RestartSec=10
+# Give up restarting after 5 failures in 5 minutes so a broken config does not
+# spin forever.
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# Long-running desktop helper: keep it out of the way of real work.
+Nice=5
+IOSchedulingClass=idle
+MemoryMax=512M
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=github-notifier
+
+# Light hardening. The daemon only needs its own config/state dirs, the
+# network, and the session bus.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=default.target

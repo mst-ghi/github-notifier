@@ -1,0 +1,13 @@
+node_modules/
+dist/
+release/
+*.tsbuildinfo
+
+# Generated from logo.jpg by `pnpm run icons`
+build/icon-master.png
+
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example

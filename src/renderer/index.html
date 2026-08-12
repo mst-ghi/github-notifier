@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" suppressHydrationWarning>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Locked down because the renderer only ever loads local files and talks to
+      the main process over IPC. No remote scripts, no remote frames.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'sha256-OsNQifQ9JGF8G9sDJrpcPZdnAIeI82xrKaoDDk0oFaY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com https://github.com; font-src 'self' data:; connect-src 'self' ws://localhost:5173"
+    />
+    <title>GitHub Notifier</title>
+    <script>
+      // Applies the stored colour mode before first paint so the window never
+      // flashes white on a dark desktop.
+      (() => {
+        try {
+          const stored = localStorage.getItem('gh-notifier-theme');
+          const system = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+          const mode = !stored || stored === 'system' ? system : stored;
+          document.documentElement.classList.add(mode);
+          document.documentElement.style.colorScheme = mode;
+        } catch {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

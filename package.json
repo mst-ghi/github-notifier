@@ -1,0 +1,76 @@
+{
+  "name": "github-notifier",
+  "version": "1.0.0",
+  "description": "Desktop GitHub pull-request notifier with a background systemd daemon, webhook receiver and MongoDB history",
+  "author": {
+    "name": "Mostafa",
+    "email": "mostafagholamidev@gmail.com"
+  },
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main/index.js",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "clean": "rm -rf dist release",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "build:node": "tsc -p tsconfig.node.json",
+    "build:web": "vite build",
+    "build": "pnpm run clean && pnpm run build:node && pnpm run build:web",
+    "dev": "concurrently -k -n VITE,TSC,ELECTRON -c cyan,yellow,magenta \"pnpm run dev:web\" \"pnpm run dev:node\" \"pnpm run dev:electron\"",
+    "dev:web": "vite",
+    "dev:node": "tsc -p tsconfig.node.json --watch --preserveWatchOutput",
+    "dev:electron": "wait-on tcp:5173 dist/main/index.js && cross-env NODE_ENV=development electron .",
+    "dev:daemon": "wait-on dist/daemon/index.js && cross-env NODE_ENV=development node --watch dist/daemon/index.js",
+    "start:daemon": "node dist/daemon/index.js",
+    "lint": "biome lint ./src",
+    "lint:fix": "biome lint --write ./src",
+    "format": "biome format --write ./src",
+    "check": "biome check ./src",
+    "check:fix": "biome check --write ./src",
+    "package": "pnpm run build && electron-builder --linux",
+    "package:deb": "pnpm run build && electron-builder --linux deb",
+    "icons": "bash packaging/make-icons.sh",
+    "service:install": "bash packaging/install-service.sh",
+    "service:uninstall": "bash packaging/uninstall-service.sh"
+  },
+  "dependencies": {
+    "@napi-rs/keyring": "^1.1.7",
+    "@octokit/rest": "^20.1.2",
+    "@octokit/webhooks": "^12.3.2",
+    "fastify": "^5.2.0",
+    "mongoose": "^8.9.2",
+    "node-notifier": "^10.0.1",
+    "pino": "^9.5.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@chakra-ui/react": "^3.36.1",
+    "@emotion/react": "^11.14.0",
+    "@octokit/webhooks-types": "^7.6.1",
+    "@types/node": "^22.10.2",
+    "@types/node-notifier": "^8.0.5",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.3.0",
+    "electron-builder": "^25.1.8",
+    "next-themes": "^0.4.6",
+    "pino-pretty": "^13.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "^5.7.0",
+    "react-router-dom": "^7.18.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "extends": "./electron-builder.yml"
+  }
+}

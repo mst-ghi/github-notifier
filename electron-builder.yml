@@ -1,0 +1,74 @@
+appId: dev.mostafa.github-notifier
+productName: GitHub Notifier
+copyright: Copyright © 2026 Mostafa
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - build/icons/**/*
+  - build/tray*.png
+  - package.json
+  - '!**/*.map'
+  - '!**/*.ts'
+  - '!**/*.tsbuildinfo'
+
+extraResources:
+  # notify-send is a separate process and cannot read out of the asar archive,
+  # so the icons also ship unpacked next to the app.
+  - from: build/icons
+    to: build/icons
+  - from: packaging/github-notifier.service
+    to: systemd/github-notifier.service
+  - from: packaging/install-service.sh
+    to: systemd/install-service.sh
+  - from: packaging/uninstall-service.sh
+    to: systemd/uninstall-service.sh
+
+asar: true
+asarUnpack:
+  # @napi-rs/keyring ships a native .node binary that cannot be loaded from inside asar.
+  - '**/node_modules/@napi-rs/keyring/**'
+  - '**/node_modules/node-notifier/**'
+
+linux:
+  target:
+    - deb
+    - AppImage
+  category: Development
+  synopsis: GitHub pull-request notifier
+  description: >-
+    Desktop notifier for GitHub pull requests. Receives webhooks, polls the
+    GitHub API for comments, merges, CI status and merge conflicts, and stores
+    a searchable notification history in MongoDB.
+  maintainer: Mostafa <benalikhoney1983@gmail.com>
+  icon: build/icons
+  executableName: github-notifier
+  desktop:
+    entry:
+      Name: GitHub Notifier
+      Comment: GitHub pull-request notifications
+      Categories: Development;Utility;
+      StartupWMClass: github-notifier
+      StartupNotify: 'true'
+
+deb:
+  priority: optional
+  compression: xz
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  afterInstall: packaging/deb-after-install.sh
+  afterRemove: packaging/deb-after-remove.sh
+
+appImage:
+  license: LICENSE
