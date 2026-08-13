@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { errorMessage } from '../shared/errors';
 import type { DaemonStatus } from '../shared/types';
-import { database, syncIndexes } from './database';
+import { db } from './db/sqlite';
 import { eventProcessor } from './event-processor';
 import { github } from './github-api';
 import { childLogger } from './logger';
@@ -50,11 +50,10 @@ export class Engine {
     this.startedAt = Date.now();
     ensureAppDirs();
 
-    // Mongo first: everything else reads settings from it.
-    await database.connect();
-    await syncIndexes();
+    // The database first: everything else reads settings from it.
+    db.open();
 
-    const settings = await getSettings();
+    const settings = getSettings();
     this.paused = settings.paused;
 
     this.notifier.configure({
@@ -63,14 +62,12 @@ export class Engine {
     });
 
     eventProcessor.on('notification', (notification) => {
-      void (async () => {
-        const current = await getSettings();
-        if (!current.notificationsEnabled || this.paused) {
-          return;
-        }
-        this.notifier.show(notification);
-        await markDelivered(notification.id);
-      })();
+      const current = getSettings();
+      if (!current.notificationsEnabled || this.paused) {
+        return;
+      }
+      this.notifier.show(notification);
+      markDelivered(notification.id);
     });
 
     await this.applyToken();
@@ -97,7 +94,7 @@ export class Engine {
       return;
     }
     eventProcessor.setCurrentUser(validation.user.login);
-    await setAuthenticatedUser(validation.user.login);
+    setAuthenticatedUser(validation.user.login);
     if (validation.missingScopes.length > 0) {
       log.warn({ missing: validation.missingScopes }, 'token is missing recommended scopes');
     }
@@ -105,7 +102,7 @@ export class Engine {
   }
 
   private async startWebhookServer(): Promise<void> {
-    const settings = await getSettings();
+    const settings = getSettings();
     const secret = secrets.getWebhookSecret();
     this.appliedWebhookSecret = secret;
     if (!secret) {
@@ -131,7 +128,7 @@ export class Engine {
 
   /** Re-reads settings and secrets. Called after the UI changes anything. */
   async reload(): Promise<void> {
-    const settings = await getSettings();
+    const settings = getSettings();
     this.paused = settings.paused;
     this.notifier.configure({ soundEnabled: settings.soundEnabled });
 
@@ -158,13 +155,13 @@ export class Engine {
 
   async pause(): Promise<void> {
     this.paused = true;
-    await updateSettings({ paused: true });
+    updateSettings({ paused: true });
     log.info('monitoring paused');
   }
 
   async resume(): Promise<void> {
     this.paused = false;
-    await updateSettings({ paused: false });
+    updateSettings({ paused: false });
     log.info('monitoring resumed');
   }
 
@@ -173,13 +170,13 @@ export class Engine {
   }
 
   async status(): Promise<DaemonStatus> {
-    const settings = database.isConnected ? await getSettings() : null;
+    const settings = db.isOpen ? getSettings() : null;
     return {
       reachable: true,
       version: readVersion(),
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
       paused: this.paused,
-      mongoConnected: database.isConnected,
+      dbConnected: db.isOpen,
       webhookListening: webhookServer.isListening,
       webhookPort: settings?.webhookPort ?? 0,
       pollerRunning: this.poller.isRunning,
@@ -188,14 +185,14 @@ export class Engine {
       lastWebhookAt: webhookServer.lastDelivery?.toISOString() ?? null,
       authenticatedAs: eventProcessor.user || null,
       rateLimit: github.isReady ? github.queue.info : null,
-      monitoredRepoCount: await monitoredRepoCount(),
+      monitoredRepoCount: monitoredRepoCount(),
     };
   }
 
   async stop(): Promise<void> {
     this.poller.stop();
     await webhookServer.stop();
-    await database.disconnect();
+    db.close();
     this.started = false;
     log.info('engine stopped');
   }

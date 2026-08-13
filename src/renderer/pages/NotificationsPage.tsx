@@ -12,11 +12,12 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useCallback, useMemo, useState } from 'react';
-import { LuCheck, LuCheckCheck, LuExternalLink, LuTrash2 } from 'react-icons/lu';
+import { LuCheck, LuCheckCheck, LuEraser, LuExternalLink, LuTrash2 } from 'react-icons/lu';
 import { EVENT_TYPES } from '../../shared/constants';
 import { EVENT_LABELS, formatDateTime, relativeTime } from '../../shared/format';
 import type { AppNotification, EventType, NotificationQuery } from '../../shared/types';
 import { Card, EmptyState, ErrorBanner, LoadingBlock, PageHeader } from '../components/Common';
+import { NotificationDrawer } from '../components/NotificationDrawer';
 import { useToast } from '../components/Toaster';
 import { useAsync, useDebounced, useIpcEvent } from '../hooks/useIpc';
 import { invoke, openExternal } from '../lib/api';
@@ -41,6 +42,9 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
   const [eventFilter, setEventFilter] = useState<EventType | ''>('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [page, setPage] = useState(0);
+  // Kept as an id, not the object: the row can be refetched under us, and the
+  // drawer must then show the fresh copy rather than a stale snapshot.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const debouncedSearch = useDebounced(search, 300);
 
   const query = useMemo<NotificationQuery>(
@@ -70,6 +74,7 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const selected = items.find((item) => item.id === selectedId) ?? null;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
   const applyUnread = useCallback(
@@ -78,6 +83,15 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
     },
     [onUnreadChange]
   );
+
+  const handleSelect = async (notification: AppNotification): Promise<void> => {
+    setSelectedId(notification.id);
+    if (!notification.isRead) {
+      await invoke('notifications:markRead', [notification.id]);
+      await reload();
+      applyUnread(await invoke('notifications:unreadCount'));
+    }
+  };
 
   const handleOpen = async (notification: AppNotification): Promise<void> => {
     openExternal(notification.url);
@@ -101,8 +115,18 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
 
   const handleDelete = async (notification: AppNotification): Promise<void> => {
     await invoke('notifications:delete', [notification.id]);
+    setSelectedId((current) => (current === notification.id ? null : current));
     await reload();
     applyUnread(await invoke('notifications:unreadCount'));
+  };
+
+  const handlePruneOld = async (): Promise<void> => {
+    const removed = await invoke('notifications:pruneNow');
+    await reload();
+    applyUnread(await invoke('notifications:unreadCount'));
+    toast.info(
+      removed > 0 ? `Deleted ${removed} old notifications` : 'Nothing old enough to delete'
+    );
   };
 
   const handleMarkAllRead = async (): Promise<void> => {
@@ -129,6 +153,15 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
             <Button size="sm" variant="outline" onClick={() => void handleMarkAllRead()}>
               <Icon as={LuCheckCheck} />
               Mark all read
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              title="Delete everything older than the retention period set in Settings"
+              onClick={() => void handlePruneOld()}
+            >
+              <Icon as={LuEraser} />
+              Delete old
             </Button>
             <Button
               size="sm"
@@ -238,7 +271,8 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
                   flex="1"
                   minW={0}
                   cursor="pointer"
-                  onClick={() => void handleOpen(notification)}
+                  title="Show details"
+                  onClick={() => void handleSelect(notification)}
                 >
                   <HStack gap={2} flexWrap="wrap" mb={1}>
                     <Badge
@@ -322,6 +356,13 @@ export function NotificationsPage({ onUnreadChange }: NotificationsPageProps): J
           ))}
         </Stack>
       )}
+
+      <NotificationDrawer
+        notification={selected}
+        onClose={() => setSelectedId(null)}
+        onMarkRead={(notification) => void handleMarkRead(notification)}
+        onDelete={(notification) => void handleDelete(notification)}
+      />
 
       {pageCount > 1 ? (
         <HStack justify="center" mt={5} gap={3}>

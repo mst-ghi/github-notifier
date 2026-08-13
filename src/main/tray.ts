@@ -22,14 +22,32 @@ function iconPath(name: string): string {
   return join(app.getAppPath(), 'build', name);
 }
 
-function trayImage(): Electron.NativeImage {
-  const image = nativeImage.createFromPath(iconPath('tray.png'));
-  if (image.isEmpty()) {
-    // Falls back to the full icon so a missing tray asset does not mean an
-    // invisible tray entry.
-    return nativeImage.createFromPath(iconPath('icons/32x32.png'));
+/**
+ * The tray icon, badged when anything is unread.
+ *
+ * Two pre-rendered PNGs rather than compositing at runtime: `nativeImage` has
+ * no drawing API, and a red dot burned into the asset looks identical on every
+ * desktop, including the ones that ignore `setTitle`.
+ */
+function trayImage(unread: number): Electron.NativeImage {
+  const name = unread > 0 ? 'tray-badge.png' : 'tray.png';
+  const image = nativeImage.createFromPath(iconPath(name));
+  if (!image.isEmpty()) {
+    return image;
   }
-  return image;
+  // A missing tray asset must not mean an invisible tray entry.
+  return nativeImage.createFromPath(iconPath('icons/32x32.png'));
+}
+
+/** Remembers what is on screen so the icon is only swapped when it changes. */
+let badgeShown = false;
+
+function applyTrayIcon(target: Tray, unread: number): void {
+  const wantBadge = unread > 0;
+  if (wantBadge !== badgeShown) {
+    target.setImage(trayImage(unread));
+    badgeShown = wantBadge;
+  }
 }
 
 function navigate(route: '/' | '/notifications' | '/settings'): void {
@@ -43,7 +61,7 @@ function buildMenu(unread: number, status: DaemonStatus | null): Menu {
 
   const statusLine = !status?.reachable
     ? 'Background service: not running'
-    : status.mongoConnected
+    : status.dbConnected
       ? `Watching ${status.monitoredRepoCount} repositories`
       : 'MongoDB unreachable';
 
@@ -66,7 +84,7 @@ function buildMenu(unread: number, status: DaemonStatus | null): Menu {
       click: () => {
         void (async () => {
           const { markAllRead } = await import('../core/notification-service');
-          await markAllRead();
+          markAllRead();
           await refreshTray();
           sendToRenderer('event:unreadCount', 0);
         })();
@@ -113,10 +131,11 @@ export async function refreshTray(): Promise<void> {
     return;
   }
   try {
-    const [unread, status] = await Promise.all([unreadCount(), controlClient.status()]);
+    const [unread, status] = [unreadCount(), await controlClient.status()];
     lastUnread = unread;
     lastStatus = status;
 
+    applyTrayIcon(tray, unread);
     tray.setContextMenu(buildMenu(unread, status));
     const badge = badgeText(unread);
     tray.setToolTip(
@@ -134,7 +153,7 @@ export function createTray(): Tray {
   if (tray) {
     return tray;
   }
-  tray = new Tray(trayImage());
+  tray = new Tray(trayImage(0));
   tray.setContextMenu(buildMenu(0, null));
   tray.setToolTip('GitHub Notifier');
 
@@ -157,6 +176,7 @@ export function createTray(): Tray {
 export function setTrayUnread(unread: number): void {
   lastUnread = unread;
   if (tray) {
+    applyTrayIcon(tray, unread);
     tray.setContextMenu(buildMenu(unread, lastStatus));
     tray.setTitle(badgeText(unread));
   }

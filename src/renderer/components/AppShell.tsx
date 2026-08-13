@@ -1,5 +1,5 @@
 import { Badge, Box, Flex, HStack, Icon, IconButton, Image, Stack, Text } from '@chakra-ui/react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   LuBell,
   LuFolderGit2,
@@ -59,9 +59,30 @@ export function AppShell({
   const location = useLocation();
   const { resolved, preference, setColorMode } = useColorMode();
   const [maximized, setMaximized] = useState(false);
+  const headerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void invoke('window:isMaximized').then(setMaximized);
+  }, []);
+
+  // Anything that overlays the app (the notification drawer) has to start below
+  // the titlebar, or it covers the window controls. The height changes with the
+  // breakpoint, so it is measured rather than hard-coded.
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+    const publish = (): void => {
+      document.documentElement.style.setProperty(
+        '--titlebar-height',
+        `${Math.round(header.getBoundingClientRect().height)}px`
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(header);
+    return () => observer.disconnect();
   }, []);
   useIpcEvent('event:maximizeChanged', setMaximized);
 
@@ -102,6 +123,7 @@ export function AppShell({
       >
         <Flex
           as="header"
+          ref={headerRef}
           className="window-drag"
           align="center"
           justify="space-between"
@@ -111,6 +133,8 @@ export function AppShell({
           bg="bg.surface"
           gap={3}
           flexShrink={0}
+          position="relative"
+          zIndex={20}
           onDoubleClick={handleTitlebarDoubleClick}
         >
           <HStack gap={3} minW={0} py={2}>

@@ -38,6 +38,16 @@ interface RestRepository {
   };
 }
 
+export interface ReleaseRef {
+  tagName: string;
+  name: string | null;
+  htmlUrl: string;
+  publishedAt: string | null;
+  body: string | null;
+  prerelease: boolean;
+  assets: Array<{ name: string; browserDownloadUrl: string; size: number }>;
+}
+
 export interface WebhookRef {
   id: number;
   url: string;
@@ -312,6 +322,32 @@ export class GithubApi {
       repoFullName: thread.repository.full_name,
       repoId: thread.repository.id,
     }));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Releases                                                          */
+  /* ---------------------------------------------------------------- */
+
+  /** Most recent non-draft release, or null when none exists. */
+  async getLatestRelease(owner: string, repo: string): Promise<ReleaseRef | null> {
+    const octokit = this.client();
+    const response = await this.queue.add(`latestRelease:${owner}/${repo}`, () =>
+      octokit.rest.repos.getLatestRelease({ owner, repo })
+    );
+    const release = response.data;
+    return {
+      tagName: release.tag_name,
+      name: release.name ?? null,
+      htmlUrl: release.html_url,
+      publishedAt: release.published_at ?? null,
+      body: release.body ?? null,
+      prerelease: release.prerelease,
+      assets: release.assets.map((asset) => ({
+        name: asset.name,
+        browserDownloadUrl: asset.browser_download_url,
+        size: asset.size,
+      })),
+    };
   }
 
   /* ---------------------------------------------------------------- */

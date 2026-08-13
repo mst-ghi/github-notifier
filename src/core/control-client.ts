@@ -12,7 +12,7 @@ export const UNREACHABLE_STATUS: DaemonStatus = {
   version: '0.0.0',
   uptimeSeconds: 0,
   paused: false,
-  mongoConnected: false,
+  dbConnected: false,
   webhookListening: false,
   webhookPort: 0,
   pollerRunning: false,

@@ -1,4 +1,7 @@
+# Native modules that are allowed to run their install scripts. pnpm blocks
+# build scripts by default; better-sqlite3 needs its to produce the .node file.
 allowBuilds:
   '@biomejs/biome': true
+  better-sqlite3: true
   electron: true
   esbuild: true

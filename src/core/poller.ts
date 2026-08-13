@@ -1,13 +1,18 @@
 import { errorMessage } from '../shared/errors';
 import { truncate } from '../shared/format';
 import type { EventType, GithubNotificationThread } from '../shared/types';
+import type { RepoRow } from './db/rows';
 import type { EventProcessor } from './event-processor';
 import type { GithubApi } from './github-api';
 import { childLogger } from './logger';
-import type { RepoDocument } from './models';
 import { pruneOldNotifications } from './notification-service';
-import { findRepoByFullName, findRepoByGithubId, listMonitoredRepos } from './repo-service';
-import { getSettings, setNotificationCursor } from './settings-service';
+import {
+  findRepoByFullName,
+  findRepoByGithubId,
+  listMonitoredRepos,
+  markConflictScanned,
+} from './repo-service';
+import { getNotificationCursor, getSettings, setNotificationCursor } from './settings-service';
 
 const log = childLogger('poller');
 
@@ -73,7 +78,7 @@ export class Poller {
     if (this.running) {
       return;
     }
-    const settings = await getSettings();
+    const settings = getSettings();
     this.running = true;
 
     this.notificationTimer = setInterval(() => {
@@ -139,7 +144,7 @@ export class Poller {
     }
     this.busy = true;
     try {
-      const since = await this.readCursor();
+      const since = getNotificationCursor();
       const threads = await this.github.listNotifications(since);
       this.lastPollAt = new Date();
       this.lastError = null;
@@ -156,7 +161,7 @@ export class Poller {
           recorded += 1;
         }
       }
-      await setNotificationCursor(this.lastPollAt);
+      setNotificationCursor(this.lastPollAt);
       log.info({ threads: threads.length, recorded }, 'notification poll finished');
     } catch (error) {
       this.lastError = errorMessage(error);
@@ -166,19 +171,13 @@ export class Poller {
     }
   }
 
-  private async readCursor(): Promise<Date | null> {
-    const { SettingsModel } = await import('./models');
-    const doc = await SettingsModel.findOne({ key: 'global' }).select('lastNotificationSyncAt');
-    return doc?.lastNotificationSyncAt ?? null;
-  }
-
   private async handleThread(thread: GithubNotificationThread): Promise<boolean> {
     // Only pull requests matter here; issues and releases are ignored.
     if (thread.subjectType !== 'PullRequest') {
       return false;
     }
-    const repo = await this.resolveRepo(thread);
-    if (!repo || !repo.monitoring) {
+    const repo = this.resolveRepo(thread);
+    if (!repo || repo.monitoring === 0) {
       return false;
     }
 
@@ -204,8 +203,8 @@ export class Poller {
     return created !== null;
   }
 
-  private async resolveRepo(thread: GithubNotificationThread): Promise<RepoDocument | null> {
-    return (await findRepoByGithubId(thread.repoId)) ?? findRepoByFullName(thread.repoFullName);
+  private resolveRepo(thread: GithubNotificationThread): RepoRow | null {
+    return findRepoByGithubId(thread.repoId) ?? findRepoByFullName(thread.repoFullName);
   }
 
   /* ---------------------------------------------------------------- */
@@ -222,17 +221,17 @@ export class Poller {
       return;
     }
     try {
-      const settings = await getSettings();
+      const settings = getSettings();
       const user = this.processor.user;
       if (!user) {
         return;
       }
-      const repos = await listMonitoredRepos();
+      const repos = listMonitoredRepos();
       const graceMs = settings.conflictGraceHours * 3600_000;
       const now = Date.now();
 
       for (const repo of repos) {
-        if (!repo.eventFilters.conflicts) {
+        if (repo.filter_conflicts === 0) {
           continue;
         }
         try {
@@ -269,10 +268,9 @@ export class Poller {
             this.conflictState.set(detail.id, isDirty);
           }
 
-          repo.lastConflictScanAt = new Date();
-          await repo.save();
+          markConflictScanned(repo.id);
         } catch (error) {
-          log.warn({ repo: repo.fullName, err: errorMessage(error) }, 'conflict scan failed');
+          log.warn({ repo: repo.full_name, err: errorMessage(error) }, 'conflict scan failed');
         }
       }
       log.debug({ repos: repos.length }, 'conflict scan finished');
@@ -284,8 +282,8 @@ export class Poller {
 
   private async prune(): Promise<void> {
     try {
-      const settings = await getSettings();
-      await pruneOldNotifications(settings.retentionDays);
+      const settings = getSettings();
+      pruneOldNotifications(settings.retentionDays);
     } catch (error) {
       log.warn({ err: errorMessage(error) }, 'prune failed');
     }

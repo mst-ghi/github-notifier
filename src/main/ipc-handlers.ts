@@ -1,6 +1,6 @@
 import { app, ipcMain, shell } from 'electron';
 import { controlClient } from '../core/control-client';
-import { database } from '../core/database';
+import { db } from '../core/db/sqlite';
 import { github } from '../core/github-api';
 import { childLogger } from '../core/logger';
 import {
@@ -9,6 +9,8 @@ import {
   getNotification,
   markAllRead,
   markRead,
+  notificationStats,
+  pruneOldNotifications,
   queryNotifications,
   repoFacets,
   unreadCount,
@@ -23,6 +25,7 @@ import {
 } from '../core/repo-service';
 import { secrets } from '../core/secrets';
 import { getSettings, setAuthenticatedUser, updateSettings } from '../core/settings-service';
+import { checkForUpdates } from '../core/updater';
 import { AppError } from '../shared/errors';
 import type { IpcArgs, IpcChannel, IpcResponse, IpcResult, TokenValidation } from '../shared/types';
 import { getMainWindow, hideMainWindow, sendToRenderer } from './window';
@@ -41,7 +44,7 @@ type IpcHandlerMap = {
 
 /** Refreshes the unread badge everywhere after any mutation. */
 async function broadcastUnread(): Promise<number> {
-  const count = await unreadCount();
+  const count = unreadCount();
   sendToRenderer('event:unreadCount', count);
   return count;
 }
@@ -64,7 +67,7 @@ async function applyToken(token: string): Promise<TokenValidation> {
 
   secrets.setToken(trimmed);
   github.setToken(trimmed);
-  await setAuthenticatedUser(validation.user.login);
+  setAuthenticatedUser(validation.user.login);
   await nudgeDaemon();
   log.info({ user: validation.user.login }, 'GitHub token stored');
   return validation;
@@ -75,7 +78,7 @@ const handlers: IpcHandlerMap = {
   'settings:get': () => getSettings(),
 
   'settings:update': async (update) => {
-    const settings = await updateSettings(update);
+    const settings = updateSettings(update);
     await nudgeDaemon();
     return settings;
   },
@@ -85,7 +88,7 @@ const handlers: IpcHandlerMap = {
   'settings:clearToken': async () => {
     secrets.clearToken();
     github.setToken(null);
-    await setAuthenticatedUser(null);
+    setAuthenticatedUser(null);
     await nudgeDaemon();
     return null;
   },
@@ -145,31 +148,38 @@ const handlers: IpcHandlerMap = {
   'notifications:get': (id) => getNotification(id),
 
   'notifications:markRead': async (ids) => {
-    const changed = await markRead(ids);
+    const changed = markRead(ids);
     await broadcastUnread();
     return changed;
   },
 
   'notifications:markAllRead': async () => {
-    const changed = await markAllRead();
+    const changed = markAllRead();
     await broadcastUnread();
     return changed;
   },
 
   'notifications:delete': async (ids) => {
-    const removed = await deleteNotifications(ids);
+    const removed = deleteNotifications(ids);
     await broadcastUnread();
     return removed;
   },
 
   'notifications:clearAll': async () => {
-    const removed = await clearAllNotifications();
+    const removed = clearAllNotifications();
     await broadcastUnread();
     return removed;
   },
 
   'notifications:unreadCount': () => unreadCount(),
   'notifications:repoFacets': () => repoFacets(),
+  'notifications:stats': () => notificationStats(getSettings().retentionDays),
+
+  'notifications:pruneNow': async (days) => {
+    const removed = pruneOldNotifications(days ?? getSettings().retentionDays);
+    await broadcastUnread();
+    return removed;
+  },
 
   /* --- daemon --- */
   'daemon:status': () => controlClient.status(),
@@ -200,7 +210,9 @@ const handlers: IpcHandlerMap = {
 
   'app:version': () => app.getVersion(),
 
-  'app:dbConnected': () => database.isConnected,
+  'app:checkForUpdates': () => checkForUpdates(app.getVersion(), github),
+
+  'app:dbConnected': () => db.isOpen,
 
   /* --- custom window frame --- */
   'window:minimizeToTray': () => {

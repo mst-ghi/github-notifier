@@ -25,7 +25,13 @@ else
     echo "error: $REPO_ROOT/dist/daemon/index.js is missing. Run 'pnpm run build' first." >&2
     exit 1
   fi
-  NODE_BIN="$(command -v node)"
+  # Must be Electron's Node, not the system one: better-sqlite3 is compiled
+  # against Electron's ABI by the postinstall hook.
+  ELECTRON_BIN="$REPO_ROOT/node_modules/electron/dist/electron"
+  if [[ ! -x "$ELECTRON_BIN" ]]; then
+    echo "error: $ELECTRON_BIN is missing. Run 'pnpm install' first." >&2
+    exit 1
+  fi
   cat >"$USER_UNIT_DIR/$UNIT_NAME" <<EOF
 [Unit]
 Description=GitHub Notifier background service (development checkout)
@@ -34,10 +40,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=ELECTRON_RUN_AS_NODE=1
 Environment=NODE_ENV=production
 Environment=LOG_LEVEL=info
 WorkingDirectory=$REPO_ROOT
-ExecStart=$NODE_BIN $REPO_ROOT/dist/daemon/index.js
+ExecStart=$ELECTRON_BIN $REPO_ROOT/dist/daemon/index.js
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

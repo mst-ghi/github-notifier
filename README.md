@@ -1,8 +1,8 @@
 # GitHub Notifier
 
 Desktop notifier for GitHub pull requests, for Debian 13. Electron + React + TypeScript
-(strict), a headless background service under systemd, MongoDB history, and native desktop
-notifications you can click to jump straight to the pull request.
+(strict), a headless background service under systemd, a local SQLite history, and native
+desktop notifications you can click to jump straight to the pull request.
 
 ---
 
@@ -43,13 +43,14 @@ what the conflict scan does, on a slower timer, and only for PRs older than a gr
 │                              │         │                                │
 │  webhook receiver  :8014     │         │  main process ── IPC ── React  │
 │  poller (notifications API)  │         │       │                        │
-│  conflict scanner            │         │       └── reads/writes Mongo   │
+│  conflict scanner            │         │       └── reads/writes SQLite  │
 │  desktop notifications       │         │                                │
 │  control API  127.0.0.1:8015 │◄────────┤  control client (bearer token) │
 └──────────────┬───────────────┘         └────────────────┬───────────────┘
                │                                          │
-               └────────────► MongoDB  ◄──────────────────┘
-                              repos / notifications / settings
+               └──────────► SQLite (WAL) ◄──────────────────┘
+                    ~/.local/share/github-notifier/github-notifier.db
+                        repos / notifications / settings
 ```
 
 The split is the point: **closing the window changes nothing.** The daemon owns the webhook
@@ -69,8 +70,11 @@ src/
     errors.ts        AppError with a machine-readable code
     format.ts        event labels, relative time, badge text
   core/              engine, shared by the daemon and Electron main
-    database.ts      Mongoose connection with its own retry loop
-    models/          repo / notification / settings schemas + DTO mappers
+    db/
+      sqlite.ts      connection, WAL pragmas, migrations
+      migrations.ts  versioned DDL, tracked with `user_version`
+      rows.ts        row shapes and the mappers to the DTOs
+    updater.ts       release check against the GitHub API
     github-api.ts    typed Octokit facade, every call queued
     rate-limit-queue.ts
     webhook-server.ts  Fastify + HMAC signature verification
@@ -94,11 +98,12 @@ src/
 ### 1. Dependencies
 
 ```bash
-sudo apt install -y mongodb-org libsecret-1-0 libnotify-bin imagemagick
+sudo apt install -y libsecret-1-0 libnotify-bin imagemagick
 ```
 
 `libsecret-1-0` backs the keyring where the token is stored. `libnotify-bin` provides
-`notify-send`, which is what makes notifications clickable.
+`notify-send`, which is what makes notifications clickable. There is no database server to
+install: the app keeps everything in one SQLite file.
 
 Node 20 or newer, and pnpm:
 
@@ -106,40 +111,38 @@ Node 20 or newer, and pnpm:
 corepack enable && corepack prepare pnpm@latest --activate
 ```
 
-### 2. MongoDB
+### 2. Storage
 
-The app connects to `mongodb://mostafa:Mostafa123@localhost:27017` with `authSource=admin`
-and uses the database `github_notifier`.
+Everything lives in a single SQLite file:
 
-```bash
-sudo systemctl enable --now mongod
-mongosh "mongodb://mostafa:Mostafa123@localhost:27017/?authSource=admin" --eval 'db.runCommand({ping:1})'
+```
+~/.local/share/github-notifier/github-notifier.db
 ```
 
-If that user does not exist yet:
+It is created on first run and migrated automatically; the schema version is tracked in
+SQLite's own `user_version`, and each migration runs inside a transaction, so a failed
+upgrade leaves the file untouched. WAL mode is on, which is what lets the daemon write while
+the window reads.
+
+Three tables:
+
+- **`repos`** — one row per repository, plus `monitoring` and one column per event filter.
+- **`notifications`** — `repo_name`, `pr_number`, `event_type`, `message`, `url`,
+  `created_at`, `is_read`, `user_id`, and a unique `dedupe_key` that stops the webhook and
+  the poller from recording the same event twice.
+- **`settings`** — a single row, pinned by a `CHECK (id = 1)`. Never holds the token.
+
+Move the file elsewhere with `GHN_DB_PATH`:
 
 ```bash
-mongosh --eval '
-  db.getSiblingDB("admin").createUser({
-    user: "mostafa",
-    pwd: "Mostafa123",
-    roles: [{ role: "readWriteAnyDatabase", db: "admin" }]
-  })'
+GHN_DB_PATH=/data/ghn.db pnpm run start:daemon
 ```
 
-Override the connection without touching the code:
+Inspect it with any SQLite client:
 
 ```bash
-MONGO_URI="mongodb://user:pass@host:27017" MONGO_DB=github_notifier pnpm run start:daemon
+sqlite3 ~/.local/share/github-notifier/github-notifier.db 'SELECT repo_name, message FROM notifications ORDER BY created_at DESC LIMIT 5;'
 ```
-
-Three collections are created automatically, with indexes:
-
-- **`repos`** — one document per repository, plus `monitoring` and the per-event filters.
-- **`notifications`** — `repoName`, `prNumber`, `eventType`, `message`, `url`, `createdAt`,
-  `isRead`, `userId`, and a unique `dedupeKey` that stops the webhook and the poller from
-  reporting the same thing twice.
-- **`settings`** — one document. Never contains the token.
 
 ### 3. Install and build
 
@@ -155,8 +158,8 @@ Create a classic personal access token with the **`repo`** and **`notifications`
 <https://github.com/settings/tokens/new?scopes=repo,notifications&description=GitHub%20Notifier>
 
 Then open the app, go to **Settings**, paste it and press Save. The app validates it against
-GitHub, tells you which scopes are missing, and stores it in your keyring — never in MongoDB
-and never in a config file in plain text.
+GitHub, tells you which scopes are missing, and stores it in your keyring — never in the
+database and never in a config file in plain text.
 
 A fine-grained token also works, but it must grant *Pull requests: read*, *Contents: read*,
 *Metadata: read*, and *Webhooks: read & write* if you want automatic webhook registration.
@@ -188,11 +191,18 @@ sudo loginctl enable-linger $USER
 Open the app, press **Sync from GitHub** on the Repositories page, then flip the switch on
 each repository you care about. Expand a row to choose which events count for that repo.
 
-The tray icon carries the unread count and gives you: open app, view notifications, mark all
-read, pause/resume monitoring, check now, settings, quit.
+The tray icon grows a **red dot** while anything is unread, and its menu gives you: open app,
+view notifications, mark all read, pause/resume monitoring, check now, settings, quit.
 
-Clicking a notification — in the list or the desktop toast — opens the pull request in your
-browser and marks it read.
+Clicking a notification in the list opens a **detail panel** on the right with the full
+record — pull request, actor, severity, whether the desktop toast was shown, the link, and
+the dedupe key. The arrow button, and clicking the desktop toast itself, go straight to
+GitHub instead.
+
+Notifications older than **7 days are deleted automatically**, read or not. Change the window
+in Settings → History, or press **Delete old** there or on the Notifications page to run the
+clean-up immediately. That section also shows how many rows are past the limit and how large
+the database file is.
 
 ---
 
@@ -302,12 +312,56 @@ pnpm run icons
 
 ---
 
+## Releases and versioning
+
+The project follows semantic versioning, and publishing is driven by tags.
+
+```bash
+pnpm run release:patch    # 2.0.0 -> 2.0.1   bug fixes
+pnpm run release:minor    # 2.0.0 -> 2.1.0   new features, nothing broken
+pnpm run release:major    # 2.0.0 -> 3.0.0   breaking change
+```
+
+The script bumps `package.json`, promotes the `## [Unreleased]` block in `CHANGELOG.md` to a
+dated section, commits and creates an annotated tag. **It does not push.** Review it, then:
+
+```bash
+git push origin main --follow-tags
+```
+
+Pushing the tag starts `.github/workflows/release.yml`, which:
+
+1. checks the tag matches `package.json` and fails loudly if it does not;
+2. runs the typecheck and Biome;
+3. builds the `.deb` and the AppImage;
+4. writes `SHA256SUMS.txt`;
+5. extracts that version's changelog section as the release notes;
+6. publishes a GitHub release with all three files attached.
+
+A tag containing a hyphen (`v2.1.0-rc.1`) is published as a prerelease.
+
+Anyone can then download the packages from
+<https://github.com/mst-ghi/github-notifier/releases>. Inside the app, **Settings → Updates**
+checks the same API and links straight to the newest `.deb`. It only reports: nothing is ever
+downloaded or installed behind your back, because these Linux packages are unsigned and
+silently replacing an installed one would be the wrong trade.
+
+To build a release without the tag dance, run the workflow by hand from the Actions tab with
+an existing tag as input.
+
+> The repository is currently **private**, so release assets are only visible to people with
+> access. Make it public if you want others to download them.
+
 ## Development
 
 ```bash
 pnpm run dev          # vite + tsc --watch + electron, renderer hot-reloads
-pnpm run dev:daemon   # daemon with --watch, in a second terminal
+pnpm run dev:daemon   # the daemon, in a second terminal
 ```
+
+The daemon always runs on Electron's bundled Node (`ELECTRON_RUN_AS_NODE=1`), because
+`better-sqlite3` is compiled against Electron's ABI. Plain `node dist/daemon/index.js` will
+not load it.
 
 `pnpm run dev` starts three processes: Vite on port 5173, `tsc --watch` for everything
 Node-side, and Electron pointed at the dev server. Renderer edits hot-reload; main-process
@@ -323,6 +377,9 @@ edits need an Electron restart.
 | `pnpm run check` | Lint + format + import sorting in one pass |
 | `pnpm run check:fix` | Same, applying safe fixes |
 | `pnpm run package:deb` | Build and produce the `.deb` |
+| `pnpm run package` | Build the `.deb` and the AppImage |
+| `pnpm run release:patch\|minor\|major` | Bump the version, changelog and tag |
+| `pnpm run icons` | Regenerate every icon from `logo.jpg` |
 | `pnpm run service:install` | Install and start the user service |
 
 ### TypeScript notes
@@ -404,15 +461,29 @@ Clickable actions need libnotify 0.8 or newer (`notify-send --version`). Debian 
 0.8.x, so this should just work; on older systems the toast still appears but the click is
 ignored, and you can open the item from the app's list instead.
 
-**"MongoDB is not reachable"**
+**"MongoDB is not reachable" / database errors**
+
+There is no MongoDB any more. If the app reports a database problem, it is about the local
+file:
 
 ```bash
-systemctl status mongod
-mongosh "mongodb://mostafa:Mostafa123@localhost:27017/?authSource=admin" --eval 'db.runCommand({ping:1})'
+ls -la ~/.local/share/github-notifier/
+sqlite3 ~/.local/share/github-notifier/github-notifier.db 'PRAGMA integrity_check;'
 ```
 
-The app reconnects on its own with exponential backoff, so once mongod is back nothing else
-needs restarting.
+The usual causes are a full disk or a permissions problem on that directory. The history is
+a cache — deleting the file loses your notification history and repo switches, and everything
+is rebuilt on the next sync:
+
+```bash
+systemctl --user stop github-notifier
+rm ~/.local/share/github-notifier/github-notifier.db*
+systemctl --user start github-notifier
+```
+
+**"The database was written by a newer version of the app"**
+
+You downgraded. Install the newer build again, or delete the file as above.
 
 **GitHub webhooks never arrive**
 
@@ -444,6 +515,16 @@ ss -lntp | grep -E '8014|8015'
 
 Only one Electron window can run at a time; launching a second focuses the first. Two
 *daemons* would be a real problem, so start it only through systemd.
+
+**`better-sqlite3` fails to load / "NODE_MODULE_VERSION" mismatch**
+
+The native module is compiled for Electron's ABI, not the system Node's. That is why the
+daemon runs under `ELECTRON_RUN_AS_NODE=1` everywhere. Running `node dist/daemon/index.js`
+directly will fail; use `pnpm run start:daemon`. After changing the Electron version:
+
+```bash
+pnpm exec electron-builder install-app-deps
+```
 
 ---
 

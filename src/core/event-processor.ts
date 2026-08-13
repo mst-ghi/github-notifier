@@ -8,8 +8,9 @@ import type {
   PullRequestSnapshot,
   RepoEventFilters,
 } from '../shared/types';
+import { type RepoRow, toEventFilters } from './db/rows';
+import { fromSqlBool } from './db/sqlite';
 import { childLogger } from './logger';
-import type { RepoDocument } from './models';
 import { type NewNotification, createNotification } from './notification-service';
 import { findRepoByGithubId, touchRepoEvent } from './repo-service';
 import { getSettings } from './settings-service';
@@ -53,7 +54,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
    * duplicate. Returns the stored notification, or null when it was skipped.
    */
   async record(
-    repo: RepoDocument | null,
+    repo: RepoRow | null,
     input: Omit<NewNotification, 'userId'>
   ): Promise<AppNotification | null> {
     if (!this.currentUser) {
@@ -62,20 +63,20 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
     }
 
     const filterKey = FILTER_BY_EVENT[input.eventType];
-    if (repo && filterKey && !repo.eventFilters[filterKey]) {
-      log.debug({ repo: repo.fullName, eventType: input.eventType }, 'event filtered out');
+    if (repo && filterKey && !toEventFilters(repo)[filterKey]) {
+      log.debug({ repo: repo.full_name, eventType: input.eventType }, 'event filtered out');
       return null;
     }
-    if (repo && !repo.monitoring) {
-      log.debug({ repo: repo.fullName }, 'repo not monitored, dropping event');
+    if (repo && !fromSqlBool(repo.monitoring)) {
+      log.debug({ repo: repo.full_name }, 'repo not monitored, dropping event');
       return null;
     }
 
-    const created = await createNotification({ ...input, userId: this.currentUser });
+    const created = createNotification({ ...input, userId: this.currentUser });
     if (created) {
       this.emit('notification', created);
       if (created.repoId !== null) {
-        await touchRepoEvent(created.repoId);
+        touchRepoEvent(created.repoId);
       }
     }
     return created;
@@ -87,12 +88,12 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
 
   /** Turns one webhook delivery into zero or more notifications. */
   async handleWebhook(delivery: HandledWebhookDelivery): Promise<AppNotification[]> {
-    const settings = await getSettings();
+    const settings = getSettings();
     const onlyMine = settings.onlyMyPullRequests;
     const results: AppNotification[] = [];
 
     const push = async (
-      repo: RepoDocument | null,
+      repo: RepoRow | null,
       input: Omit<NewNotification, 'userId'>
     ): Promise<void> => {
       const created = await this.record(repo, input);
@@ -109,7 +110,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
 
       case 'pull_request': {
         const { payload } = delivery;
-        const repo = await findRepoByGithubId(payload.repository.id);
+        const repo = findRepoByGithubId(payload.repository.id);
         const pull = payload.pull_request;
         const isMine = pull.user.login === this.currentUser;
         const actor = payload.sender.login;
@@ -194,7 +195,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
         if (onlyMine && !isMine) {
           break;
         }
-        const repo = await findRepoByGithubId(payload.repository.id);
+        const repo = findRepoByGithubId(payload.repository.id);
         await push(repo, {
           repoName: payload.repository.full_name,
           repoId: payload.repository.id,
@@ -224,7 +225,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
         if (onlyMine && payload.pull_request.user.login !== this.currentUser) {
           break;
         }
-        const repo = await findRepoByGithubId(payload.repository.id);
+        const repo = findRepoByGithubId(payload.repository.id);
         await push(repo, {
           repoName: payload.repository.full_name,
           repoId: payload.repository.id,
@@ -254,7 +255,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
         if (onlyMine && payload.pull_request.user.login !== this.currentUser) {
           break;
         }
-        const repo = await findRepoByGithubId(payload.repository.id);
+        const repo = findRepoByGithubId(payload.repository.id);
         const state = payload.review.state.toLowerCase();
         const verdict =
           state === 'approved'
@@ -291,7 +292,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
           break;
         }
         const failed = suite.conclusion !== 'success';
-        const repo = await findRepoByGithubId(payload.repository.id);
+        const repo = findRepoByGithubId(payload.repository.id);
         for (const pull of pulls) {
           await push(repo, {
             repoName: payload.repository.full_name,
@@ -335,7 +336,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
    * when it flips.
    */
   async recordConflict(
-    repo: RepoDocument | null,
+    repo: RepoRow | null,
     pull: PullRequestSnapshot,
     resolved: boolean
   ): Promise<AppNotification | null> {
@@ -364,7 +365,7 @@ export class EventProcessor extends EventEmitter<ProcessorEvents> {
 
   /** Generic entry point used by the notifications-API poller. */
   async recordFromPoller(
-    repo: RepoDocument | null,
+    repo: RepoRow | null,
     input: Omit<NewNotification, 'userId' | 'source'>,
     source: NotificationSource = 'poller'
   ): Promise<AppNotification | null> {

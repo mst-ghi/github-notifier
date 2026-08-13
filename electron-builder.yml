@@ -29,8 +29,9 @@ extraResources:
 
 asar: true
 asarUnpack:
-  # @napi-rs/keyring ships a native .node binary that cannot be loaded from inside asar.
+  # Native .node binaries cannot be loaded from inside an asar archive.
   - '**/node_modules/@napi-rs/keyring/**'
+  - '**/node_modules/better-sqlite3/**'
   - '**/node_modules/node-notifier/**'
 
 linux:
@@ -41,8 +42,8 @@ linux:
   synopsis: GitHub pull-request notifier
   description: >-
     Desktop notifier for GitHub pull requests. Receives webhooks, polls the
-    GitHub API for comments, merges, CI status and merge conflicts, and stores
-    a searchable notification history in MongoDB.
+    GitHub API for comments, merges, CI status and merge conflicts, and keeps a
+    searchable notification history in a local SQLite file.
   maintainer: Mostafa <benalikhoney1983@gmail.com>
   icon: build/icons
   executableName: github-notifier

@@ -5,9 +5,11 @@ import type {
   DaemonStatus,
   NotificationPage,
   NotificationQuery,
+  NotificationStats,
   Repo,
   RepoUpdate,
   TokenValidation,
+  UpdateInfo,
   WindowBounds,
 } from './domain';
 
@@ -25,7 +27,7 @@ export interface IpcRequestMap {
   /* --- settings --- */
   'settings:get': { args: []; result: AppSettings };
   'settings:update': { args: [update: AppSettingsUpdate]; result: AppSettings };
-  /** Stores the token in the OS keyring. The token never touches Mongo. */
+  /** Stores the token in the OS keyring. The token never touches the database. */
   'settings:setToken': { args: [token: string]; result: TokenValidation };
   'settings:clearToken': { args: []; result: null };
   'settings:validateToken': { args: []; result: TokenValidation };
@@ -35,7 +37,7 @@ export interface IpcRequestMap {
 
   /* --- repos --- */
   'repos:list': { args: []; result: Repo[] };
-  /** Pulls the repo list from GitHub and upserts it into Mongo. */
+  /** Pulls the repo list from GitHub and upserts it. */
   'repos:sync': { args: []; result: Repo[] };
   'repos:update': { args: [repoId: string, update: RepoUpdate]; result: Repo };
   'repos:setMonitoring': { args: [repoId: string, enabled: boolean]; result: Repo };
@@ -53,6 +55,13 @@ export interface IpcRequestMap {
   'notifications:unreadCount': { args: []; result: number };
   /** Distinct repo names present in the history, for the filter dropdown. */
   'notifications:repoFacets': { args: []; result: string[] };
+  /** Counts and file size, for the housekeeping section in Settings. */
+  'notifications:stats': { args: []; result: NotificationStats };
+  /**
+   * Deletes everything older than `days`, read or not. Omit `days` to use the
+   * configured retention. Returns how many rows went.
+   */
+  'notifications:pruneNow': { args: [days?: number]; result: number };
 
   /* --- daemon control --- */
   'daemon:status': { args: []; result: DaemonStatus };
@@ -64,12 +73,14 @@ export interface IpcRequestMap {
   /* --- shell --- */
   'shell:openExternal': { args: [url: string]; result: null };
   'app:version': { args: []; result: string };
+  /** Asks GitHub whether a newer release exists. Never installs anything. */
+  'app:checkForUpdates': { args: []; result: UpdateInfo };
   /**
-   * Whether *this window's* MongoDB connection is up.
+   * Whether *this window's* database handle is open.
    *
-   * Deliberately separate from `DaemonStatus.mongoConnected`: the window has
-   * its own connection, so "the daemon is not running" must never be reported
-   * as "the database is down".
+   * Deliberately separate from `DaemonStatus.dbConnected`: the window opens the
+   * file itself, so "the daemon is not running" must never be reported as
+   * "the database is down".
    */
   'app:dbConnected': { args: []; result: boolean };
 
@@ -98,7 +109,7 @@ export interface IpcEventMap {
   'event:navigate': { route: '/' | '/notifications' | '/settings' };
   /** Pushed whenever the window is maximised or restored. */
   'event:maximizeChanged': boolean;
-  /** This window's own MongoDB connection state. */
+  /** This window's own database connection state. */
   'event:dbConnected': boolean;
   'event:toast': { severity: 'info' | 'success' | 'warning' | 'error'; message: string };
 }

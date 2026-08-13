@@ -15,9 +15,9 @@ Type=simple
 Environment=ELECTRON_RUN_AS_NODE=1
 Environment=NODE_ENV=production
 Environment=LOG_LEVEL=info
-# Override these with: systemctl --user edit github-notifier
-Environment=MONGO_URI=mongodb://mostafa:Mostafa123@localhost:27017
-Environment=MONGO_DB=github_notifier
+# The database is a single file under $XDG_DATA_HOME/github-notifier.
+# Override its location with: systemctl --user edit github-notifier
+#   Environment=GHN_DB_PATH=/path/to/github-notifier.db
 
 ExecStart=/opt/GitHub Notifier/github-notifier /opt/GitHub Notifier/resources/app.asar/dist/daemon/index.js
 

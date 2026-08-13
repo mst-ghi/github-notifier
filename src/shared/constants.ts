@@ -16,9 +16,8 @@ export const DEFAULT_WEBHOOK_PORT = 8014 as const;
 export const DEFAULT_CONTROL_PORT = 8015 as const;
 export const CONTROL_HOST = '127.0.0.1' as const;
 
-/** MongoDB defaults. `authSource=admin` because the user lives in the admin db. */
-export const DEFAULT_MONGO_URI = 'mongodb://mostafa:Mostafa123@localhost:27017' as const;
-export const DEFAULT_MONGO_DB = 'github_notifier' as const;
+/** SQLite file name, created under $XDG_DATA_HOME/github-notifier. */
+export const DATABASE_FILE_NAME = 'github-notifier.db' as const;
 
 /** Poll cadences, in seconds. */
 export const DEFAULT_POLL_INTERVAL_SECONDS = 60 as const;
@@ -26,6 +25,12 @@ export const DEFAULT_CONFLICT_POLL_INTERVAL_SECONDS = 900 as const;
 
 /** A PR must sit unmerged this long before a conflict is worth reporting. */
 export const DEFAULT_CONFLICT_GRACE_HOURS = 24 as const;
+
+/**
+ * Notifications older than this are deleted, read or not. A week is long
+ * enough to catch up after a holiday and short enough that the file stays tiny.
+ */
+export const DEFAULT_RETENTION_DAYS = 7 as const;
 
 /** Keyring entries. */
 export const KEYRING_SERVICE = 'github-notifier' as const;

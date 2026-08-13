@@ -12,4 +12,4 @@ systemctl --user daemon-reload
 
 echo "Service removed."
 echo "Config and secrets are still in ${XDG_CONFIG_HOME:-$HOME/.config}/github-notifier"
-echo "Notification history is still in MongoDB (database: github_notifier)"
+echo "Notification history is still in ${XDG_DATA_HOME:-$HOME/.local/share}/github-notifier"

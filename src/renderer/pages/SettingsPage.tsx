@@ -15,13 +15,35 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import { LuExternalLink, LuEye, LuEyeOff, LuKeyRound, LuRefreshCw } from 'react-icons/lu';
-import type { AppSettings, AppSettingsUpdate, DaemonStatus } from '../../shared/types';
+import {
+  LuDatabase,
+  LuDownload,
+  LuEraser,
+  LuExternalLink,
+  LuEye,
+  LuEyeOff,
+  LuKeyRound,
+  LuRefreshCw,
+  LuTrash2,
+} from 'react-icons/lu';
+import { relativeTime } from '../../shared/format';
+import type { AppSettings, AppSettingsUpdate, DaemonStatus, UpdateInfo } from '../../shared/types';
 import { Card, ErrorBanner, LoadingBlock, PageHeader } from '../components/Common';
 import { useColorMode } from '../components/Provider';
 import { useToast } from '../components/Toaster';
 import { useAsync } from '../hooks/useIpc';
 import { invoke, openExternal } from '../lib/api';
+
+/** Human-readable file size. Kept local; nothing else needs it. */
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
 
 const TOKEN_HELP_URL =
   'https://github.com/settings/tokens/new?scopes=repo,notifications&description=GitHub%20Notifier';
@@ -95,11 +117,19 @@ export function SettingsPage({ status, onReload }: SettingsPageProps): JSX.Eleme
   const toast = useToast();
   const { preference, setColorMode } = useColorMode();
   const { data, loading, error, reload, setData } = useAsync(() => invoke('settings:get'), []);
+  const stats = useAsync(() => invoke('notifications:stats'), []);
 
   const [token, setToken] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [savingToken, setSavingToken] = useState(false);
   const [draft, setDraft] = useState<AppSettings | null>(null);
+  const [version, setVersion] = useState('');
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    void invoke('app:version').then(setVersion);
+  }, []);
 
   useEffect(() => {
     if (data) {
@@ -148,6 +178,39 @@ export function SettingsPage({ status, onReload }: SettingsPageProps): JSX.Eleme
     toast.info('Token removed from the keyring');
   };
 
+  const handlePruneNow = async (): Promise<void> => {
+    const removed = await invoke('notifications:pruneNow');
+    await stats.reload();
+    toast.info(
+      removed > 0 ? `Deleted ${removed} old notifications` : 'Nothing old enough to delete'
+    );
+  };
+
+  const handleClearHistory = async (): Promise<void> => {
+    const removed = await invoke('notifications:clearAll');
+    await stats.reload();
+    toast.info(`Deleted all ${removed} notifications`);
+  };
+
+  const handleCheckUpdates = async (): Promise<void> => {
+    setChecking(true);
+    try {
+      const result = await invoke('app:checkForUpdates');
+      setUpdate(result);
+      if (result.error) {
+        toast.error(result.error);
+      } else if (result.updateAvailable) {
+        toast.success(`Version ${result.latestVersion} is available`);
+      } else {
+        toast.info('You are on the latest version');
+      }
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const handleGenerateSecret = async (): Promise<void> => {
     const secret = await invoke('settings:generateWebhookSecret');
     await reload();
@@ -178,7 +241,7 @@ export function SettingsPage({ status, onReload }: SettingsPageProps): JSX.Eleme
 
       <Section
         title="GitHub account"
-        description="The token is stored in your system keyring, never in MongoDB."
+        description="The token is stored in your system keyring, never in the database."
       >
         <Field
           label="Personal access token"
@@ -397,20 +460,77 @@ export function SettingsPage({ status, onReload }: SettingsPageProps): JSX.Eleme
             </Switch.Control>
           </Switch.Root>
         </Field>
+      </Section>
+
+      <Section
+        title="History"
+        description="Notifications live in a local SQLite file. Nothing leaves your machine."
+      >
+        <Field
+          label="Keep notifications for"
+          hint="Anything older is deleted automatically, read or not. 0 keeps everything forever."
+        >
+          <HStack gap={2}>
+            <Input
+              type="number"
+              size="sm"
+              w={{ base: 'full', sm: '110px' }}
+              min={0}
+              value={draft.retentionDays}
+              onChange={(event) =>
+                setDraft({ ...draft, retentionDays: Number(event.target.value) })
+              }
+              onBlur={(event) => void patch({ retentionDays: Number(event.target.value) })}
+            />
+            <Text fontSize="sm" color="fg.subtle">
+              days
+            </Text>
+          </HStack>
+        </Field>
 
         <Field
-          label="History retention"
-          hint="Days to keep read notifications. 0 keeps everything."
+          label="Delete old now"
+          hint={
+            stats.data
+              ? `${stats.data.prunable} of ${stats.data.total} notifications are past the limit.`
+              : 'Runs the same clean-up the app performs hourly.'
+          }
         >
-          <Input
-            type="number"
+          <Button
             size="sm"
-            w={{ base: 'full', sm: '120px' }}
-            min={0}
-            value={draft.retentionDays}
-            onChange={(event) => setDraft({ ...draft, retentionDays: Number(event.target.value) })}
-            onBlur={(event) => void patch({ retentionDays: Number(event.target.value) })}
-          />
+            variant="outline"
+            disabled={(stats.data?.prunable ?? 0) === 0}
+            onClick={() => void handlePruneNow()}
+          >
+            <Icon as={LuEraser} />
+            Delete old
+          </Button>
+        </Field>
+
+        <Field label="Delete everything" hint="Removes the whole history. Cannot be undone.">
+          <Button
+            size="sm"
+            variant="outline"
+            colorPalette="red"
+            disabled={(stats.data?.total ?? 0) === 0}
+            onClick={() => void handleClearHistory()}
+          >
+            <Icon as={LuTrash2} />
+            Clear history
+          </Button>
+        </Field>
+
+        <Field label="Stored" hint="Row count, file size and how far back the history goes.">
+          <HStack gap={2} color="fg.subtle" fontSize="sm">
+            <Icon as={LuDatabase} boxSize={4} />
+            <Text>
+              {stats.data
+                ? `${stats.data.total} rows · ${formatBytes(stats.data.databaseBytes)}${
+                    stats.data.oldestAt ? ` · since ${relativeTime(stats.data.oldestAt)}` : ''
+                  }`
+                : '—'}
+            </Text>
+          </HStack>
         </Field>
       </Section>
 
@@ -449,6 +569,63 @@ export function SettingsPage({ status, onReload }: SettingsPageProps): JSX.Eleme
           <Text fontSize="sm" color="fg.subtle">
             {status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'never'}
           </Text>
+        </Field>
+      </Section>
+
+      <Section
+        title="Updates"
+        description="Releases are published on GitHub. The app checks, but never installs by itself."
+      >
+        <Field label="Installed version">
+          <HStack gap={2}>
+            <Badge variant="outline">v{version || '—'}</Badge>
+            {update?.updateAvailable ? (
+              <Badge colorPalette="green">v{update.latestVersion} available</Badge>
+            ) : null}
+          </HStack>
+        </Field>
+
+        <Field
+          label="Check for updates"
+          hint={
+            update?.publishedAt
+              ? `Latest release published ${relativeTime(update.publishedAt)}.`
+              : 'Asks the GitHub Releases API for the newest tag.'
+          }
+        >
+          <HStack gap={2}>
+            <Button
+              size="sm"
+              variant="outline"
+              loading={checking}
+              onClick={() => void handleCheckUpdates()}
+            >
+              <Icon as={LuRefreshCw} />
+              Check now
+            </Button>
+            {update?.releaseUrl ? (
+              <Button
+                size="sm"
+                colorPalette={update.updateAvailable ? 'brand' : 'gray'}
+                variant={update.updateAvailable ? 'solid' : 'outline'}
+                onClick={() => openExternal(update.downloadUrl ?? update.releaseUrl ?? '')}
+              >
+                <Icon as={LuDownload} />
+                {update.downloadUrl ? 'Download .deb' : 'Open release'}
+              </Button>
+            ) : null}
+          </HStack>
+        </Field>
+
+        <Field label="All releases" hint="Every published build, with its .deb and AppImage.">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openExternal('https://github.com/mst-ghi/github-notifier/releases')}
+          >
+            <Icon as={LuExternalLink} />
+            Open on GitHub
+          </Button>
         </Field>
       </Section>
     </Box>

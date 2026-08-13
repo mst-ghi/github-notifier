@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 
   await engine.start();
 
-  const settings = await getSettings();
+  const settings = getSettings();
   await controlServer.start({ port: settings.controlPort, engine });
 
   log.info(

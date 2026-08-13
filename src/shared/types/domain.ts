@@ -31,7 +31,7 @@ export interface RepoEventFilters {
 
 /** A repository the user can see, plus this app's monitoring settings for it. */
 export interface Repo {
-  /** Mongo `_id` rendered as a string. */
+  /** Database row id, rendered as a string. */
   id: string;
   /** Numeric GitHub repository id. Stable across renames. */
   githubId: number;
@@ -68,7 +68,7 @@ export interface RepoUpdate {
 /* Notification                                                        */
 /* ------------------------------------------------------------------ */
 
-/** A single stored notification. Mirrors the `notifications` collection. */
+/** A single stored notification. Mirrors the `notifications` table. */
 export interface AppNotification {
   id: string;
   /** GitHub login of the account this notifier runs as. */
@@ -121,11 +121,22 @@ export interface NotificationPage {
   skip: number;
 }
 
+/** Housekeeping figures for the notification history. */
+export interface NotificationStats {
+  total: number;
+  unread: number;
+  /** How many rows the current retention setting would delete right now. */
+  prunable: number;
+  oldestAt: string | null;
+  /** Size of the SQLite file on disk. */
+  databaseBytes: number;
+}
+
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Everything in the `settings` collection except the token, which lives in the keyring. */
+/** Everything in the `settings` table except the token, which lives in the keyring. */
 export interface AppSettings {
   /** GitHub login of the account the token belongs to. */
   userId: string | null;
@@ -179,7 +190,8 @@ export interface DaemonStatus {
   /** Seconds since the daemon started. */
   uptimeSeconds: number;
   paused: boolean;
-  mongoConnected: boolean;
+  /** Whether the *daemon's* database handle is open. */
+  dbConnected: boolean;
   webhookListening: boolean;
   webhookPort: number;
   pollerRunning: boolean;
@@ -205,6 +217,20 @@ export interface GithubUser {
   name: string | null;
   avatarUrl: string;
   htmlUrl: string;
+}
+
+/** What a release check found. Reporting only: the app never self-installs. */
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  /** Direct link to the .deb asset, when the release has one. */
+  downloadUrl: string | null;
+  /** Release notes, as markdown. */
+  notes: string | null;
+  error: string | null;
 }
 
 /** Result of validating a token against the GitHub API. */

@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { controlClient } from '../core/control-client';
-import { database } from '../core/database';
+import { db } from '../core/db/sqlite';
 import { github } from '../core/github-api';
 import { logger } from '../core/logger';
 import { ensureAppDirs } from '../core/paths';
@@ -46,7 +46,7 @@ async function pushStatus(): Promise<void> {
   try {
     const status = await controlClient.status();
     sendToRenderer('event:status', status);
-    sendToRenderer('event:dbConnected', database.isConnected);
+    sendToRenderer('event:dbConnected', db.isOpen);
   } catch (error) {
     log.debug({ err: errorMessage(error) }, 'status push failed');
   }
@@ -55,18 +55,13 @@ async function pushStatus(): Promise<void> {
 async function bootstrap(): Promise<void> {
   ensureAppDirs();
 
-  // Give Mongo a short head start so the first settings read succeeds, but
-  // never block the window on it: every IPC handler checks the connection
-  // itself, and the retry loop keeps running in the background either way.
-  const connection = database.connect().catch((error: unknown) => {
-    log.error({ err: errorMessage(error) }, 'MongoDB connection failed');
-  });
-  await Promise.race([
-    connection,
-    new Promise<void>((resolve) => {
-      setTimeout(resolve, 3000).unref?.();
-    }),
-  ]);
+  // SQLite opens in microseconds, so unlike a network database there is no
+  // reason to defer this or race it against a timeout.
+  try {
+    db.open();
+  } catch (error) {
+    log.error({ err: errorMessage(error) }, 'could not open the database');
+  }
 
   const token = secrets.getToken();
   if (token) {
@@ -77,7 +72,7 @@ async function bootstrap(): Promise<void> {
 
   let startMinimized = false;
   try {
-    const settings = await getSettings();
+    const settings = getSettings();
     startMinimized = settings.startMinimized;
     controlClient.setPort(settings.controlPort);
   } catch (error) {
@@ -126,7 +121,7 @@ app.on('will-quit', () => {
     clearInterval(statusTimer);
   }
   destroyTray();
-  void database.disconnect();
+  db.close();
 });
 
 process.on('unhandledRejection', (reason) => {

@@ -1,0 +1,100 @@
+name: Release
+
+# Publishing is driven entirely by tags: `pnpm run release:minor` bumps the
+# version, writes the changelog, commits and pushes `vX.Y.Z`, and that tag is
+# what starts this workflow.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build, e.g. v2.0.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Linux packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev fakeroot dpkg rpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify before publishing
+        run: |
+          pnpm run typecheck
+          pnpm run check
+
+      - name: Check the tag matches package.json
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ -n "${{ github.event.inputs.tag }}" ]; then TAG="${{ github.event.inputs.tag }}"; fi
+          PKG="v$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $TAG does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Build .deb and AppImage
+        run: pnpm run package
+
+      - name: Checksums
+        working-directory: release
+        run: |
+          shopt -s nullglob
+          sha256sum *.deb *.AppImage > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Extract release notes for this version
+        id: notes
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          # Pull just this version's section out of the changelog.
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "No changelog entry for $VERSION." > RELEASE_NOTES.md
+          fi
+          cat RELEASE_NOTES.md
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: GitHub Notifier ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          # A tag containing a hyphen is a prerelease: v2.1.0-rc.1.
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
+          files: |
+            release/*.deb
+            release/*.AppImage
+            release/SHA256SUMS.txt
