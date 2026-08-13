@@ -29,10 +29,13 @@ app.setAppUserModelId(APP_ID);
 // no untrusted renderer content, and contextIsolation is still on.
 app.commandLine.appendSwitch('disable-features', 'MediaSessionService');
 
+// `app.quit()` is not immediate: it unwinds through the event loop, so without
+// this guard the losing instance still ran bootstrap on the way out, opening a
+// second database handle and briefly creating a window.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   log.info('another instance is already running, exiting');
-  app.quit();
+  app.exit(0);
 }
 
 app.on('second-instance', () => {
@@ -94,6 +97,9 @@ async function bootstrap(): Promise<void> {
 
 app.whenReady().then(
   () => {
+    if (!gotLock) {
+      return;
+    }
     void bootstrap();
   },
   (error: unknown) => {

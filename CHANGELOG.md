@@ -9,6 +9,20 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.0.1] - 2026-08-13
 
+### Fixed
+
+- **The background service could not start from the .deb.** Its `ExecStart` was
+  unquoted, and the install directory contains a space, so systemd tried to run
+  `/opt/GitHub` and failed with `status=203/EXEC`. Both paths are quoted now.
+- **A stale user-level unit silently shadowed the packaged one.** systemd
+  prefers a unit in `~/.config/systemd/user` over `/usr/lib/systemd/user`, so an
+  old development unit kept running the system Node against a `better-sqlite3`
+  build made for Electron's ABI — a `NODE_MODULE_VERSION` mismatch, once every
+  ten seconds, for ever. `install-service.sh` now compares the two units and
+  either removes the redundant override or refreshes it.
+- `StartLimitBurst` and `StartLimitIntervalSec` moved from `[Service]` to
+  `[Unit]`, where systemd actually reads them.
+
 ## [2.0.0] - 2026-08-13
 
 Second release. The storage engine changed, so this is a major version.

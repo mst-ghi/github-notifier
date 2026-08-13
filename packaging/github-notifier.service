@@ -7,6 +7,11 @@ After=graphical-session.target network-online.target
 Wants=network-online.target
 PartOf=graphical-session.target
 
+# Give up restarting after 5 failures in 5 minutes so a broken config does not
+# spin forever. These belong to [Unit]; systemd ignores them under [Service].
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
 [Service]
 Type=simple
 
@@ -19,7 +24,10 @@ Environment=LOG_LEVEL=info
 # Override its location with: systemctl --user edit github-notifier
 #   Environment=GHN_DB_PATH=/path/to/github-notifier.db
 
-ExecStart=/opt/GitHub Notifier/github-notifier /opt/GitHub Notifier/resources/app.asar/dist/daemon/index.js
+# Both paths are quoted: the install directory contains a space, and systemd
+# splits ExecStart on whitespace, so an unquoted form tries to run "/opt/GitHub"
+# and dies with status=203/EXEC.
+ExecStart="/opt/GitHub Notifier/github-notifier" "/opt/GitHub Notifier/resources/app.asar/dist/daemon/index.js"
 
 # Notifications and the keyring both need the session bus. systemd user
 # services normally inherit it; this makes the dependency explicit.
@@ -27,10 +35,6 @@ ExecStartPre=/bin/sh -c 'test -n "$DBUS_SESSION_BUS_ADDRESS" || echo "warning: n
 
 Restart=on-failure
 RestartSec=10
-# Give up restarting after 5 failures in 5 minutes so a broken config does not
-# spin forever.
-StartLimitBurst=5
-StartLimitIntervalSec=300
 
 TimeoutStopSec=15
 KillSignal=SIGTERM

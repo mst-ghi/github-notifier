@@ -13,10 +13,30 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 mkdir -p "$USER_UNIT_DIR"
 
+SYSTEM_UNIT="/usr/lib/systemd/user/$UNIT_NAME"
+
 if [[ -x "$INSTALL_DIR/github-notifier" ]]; then
   echo "Found packaged install at $INSTALL_DIR"
-  # The .deb already dropped a unit in /usr/lib/systemd/user; nothing to write.
-  if [[ ! -f /usr/lib/systemd/user/$UNIT_NAME ]]; then
+
+  # A unit in the user's own config directory silently takes precedence over the
+  # one the .deb installed. That is useful when the packaged unit is out of date
+  # — an older .deb, or one built before a fix — but dangerous when it is merely
+  # left over, because it keeps running a stale ExecStart for ever.
+  #
+  # So: compare. Identical means the override is redundant and is removed;
+  # different means this checkout is newer and the override is (re)written.
+  if [[ -f "$SYSTEM_UNIT" ]] && cmp -s "$SYSTEM_UNIT" "$REPO_ROOT/packaging/$UNIT_NAME"; then
+    if [[ -f "$USER_UNIT_DIR/$UNIT_NAME" ]]; then
+      echo "The packaged unit is current; removing the redundant user-level copy:"
+      echo "  $USER_UNIT_DIR/$UNIT_NAME"
+      rm -f "$USER_UNIT_DIR/$UNIT_NAME"
+    else
+      echo "Using the packaged unit at $SYSTEM_UNIT"
+    fi
+  else
+    echo "The packaged unit is missing or out of date; installing a user-level"
+    echo "override, which takes precedence over $SYSTEM_UNIT:"
+    echo "  $USER_UNIT_DIR/$UNIT_NAME"
     install -m 0644 "$REPO_ROOT/packaging/$UNIT_NAME" "$USER_UNIT_DIR/$UNIT_NAME"
   fi
 else
