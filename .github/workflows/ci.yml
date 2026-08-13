@@ -19,9 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No version here on purpose: it is read from package.json's
+      # "packageManager" field, and specifying both is an error.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
