@@ -31,8 +31,6 @@ export interface AppShellProps {
   children: ReactNode;
   unread: number;
   status: DaemonStatus | null;
-  /** This window's own MongoDB connection, not the daemon's. */
-  dbConnected: boolean;
   onTogglePause: () => void;
 }
 
@@ -49,13 +47,7 @@ export interface AppShellProps {
  * is a left rail, below that it becomes a horizontal strip under the header, so
  * the window stays usable when it is dragged narrow.
  */
-export function AppShell({
-  children,
-  unread,
-  status,
-  dbConnected,
-  onTogglePause,
-}: AppShellProps): JSX.Element {
+export function AppShell({ children, unread, status, onTogglePause }: AppShellProps): JSX.Element {
   const location = useLocation();
   const { resolved, preference, setColorMode } = useColorMode();
   const [maximized, setMaximized] = useState(false);
@@ -230,14 +222,14 @@ export function AppShell({
             })}
 
             <Box display={{ base: 'none', md: 'block' }} mt="auto" pt={4}>
-              <StatusStrip status={status} dbConnected={dbConnected} />
+              <StatusStrip status={status} />
             </Box>
           </Stack>
 
           <Box flex="1" minW={0} overflowY="auto" p={{ base: 3, md: 6 }}>
             {children}
             <Box display={{ base: 'block', md: 'none' }} mt={6}>
-              <StatusStrip status={status} dbConnected={dbConnected} />
+              <StatusStrip status={status} />
             </Box>
           </Box>
         </Flex>
@@ -251,29 +243,17 @@ export function AppShell({
 /**
  * Compact health readout.
  *
- * The MongoDB row reports *this window's* connection, because that is the one
- * the user's edits go through and it is known even when the daemon is down.
- * Reading it off the daemon status instead would show a healthy database as
- * "offline" whenever the service was simply not running.
+ * There is no database row: storage is a local file that is either there or the
+ * app is not running at all, so a permanent green line said nothing useful. A
+ * genuine database failure still surfaces as a banner on the Repositories page.
  */
-export function StatusStrip({
-  status,
-  dbConnected,
-}: {
-  status: DaemonStatus | null;
-  dbConnected: boolean;
-}): JSX.Element {
+export function StatusStrip({ status }: { status: DaemonStatus | null }): JSX.Element {
   const daemonUp = status?.reachable ?? false;
   const rows: Array<{ label: string; ok: boolean; detail: string }> = [
     {
       label: 'Background service',
       ok: daemonUp,
       detail: daemonUp ? 'running' : 'stopped',
-    },
-    {
-      label: 'MongoDB',
-      ok: dbConnected,
-      detail: dbConnected ? 'connected' : 'offline',
     },
     {
       label: 'Webhook',

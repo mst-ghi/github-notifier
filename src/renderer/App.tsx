@@ -62,12 +62,7 @@ export function App(): JSX.Element {
   }, [status?.paused, toast]);
 
   return (
-    <AppShell
-      unread={unread}
-      status={status}
-      dbConnected={dbConnected}
-      onTogglePause={() => void togglePause()}
-    >
+    <AppShell unread={unread} status={status} onTogglePause={() => void togglePause()}>
       <Routes>
         <Route path="/" element={<RepositoriesPage status={status} dbConnected={dbConnected} />} />
         <Route path="/notifications" element={<NotificationsPage onUnreadChange={setUnread} />} />

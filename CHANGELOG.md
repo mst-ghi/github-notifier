@@ -24,6 +24,9 @@ Second release. The storage engine changed, so this is a major version.
 - The daemon runs on Electron's bundled Node in every environment, so the
   native SQLite module only ever has to match one ABI.
 - `DaemonStatus.mongoConnected` is now `dbConnected`.
+- The sidebar no longer shows a database row. With a local file it would have
+  been permanently green; a real failure still raises a banner on the
+  Repositories page.
 
 ### Added
 
