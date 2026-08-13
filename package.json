@@ -1,6 +1,6 @@
 {
   "name": "github-notifier",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Desktop GitHub pull-request notifier with a background systemd daemon, webhook receiver and local SQLite history",
   "author": {
     "name": "Mostafa",

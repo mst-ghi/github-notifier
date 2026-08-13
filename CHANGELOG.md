@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-08-13
+
 ## [2.0.0] - 2026-08-13
 
 Second release. The storage engine changed, so this is a major version.
