@@ -13,6 +13,7 @@ import type {
   Repo,
   RepoUpdate,
   TokenValidation,
+  UpdateDownload,
   UpdateInfo,
   WindowBounds,
 } from './domain';
@@ -103,6 +104,12 @@ export interface IpcRequestMap {
   'app:copyToClipboard': { args: [text: string]; result: null };
   /** Asks GitHub whether a newer release exists. Never installs anything. */
   'app:checkForUpdates': { args: []; result: UpdateInfo };
+  /** Starts downloading the newest package. Progress arrives on the event channel. */
+  'update:download': { args: []; result: UpdateDownload };
+  'update:cancel': { args: []; result: UpdateDownload };
+  'update:state': { args: []; result: UpdateDownload };
+  /** Opens the file manager with the downloaded package selected. */
+  'update:reveal': { args: []; result: null };
   /**
    * Whether *this window's* database handle is open.
    *
@@ -141,6 +148,8 @@ export interface IpcEventMap {
   'event:maximizeChanged': boolean;
   /** This window's own database connection state. */
   'event:dbConnected': boolean;
+  /** Download progress for the in-app updater. */
+  'event:updateDownload': UpdateDownload;
   'event:toast': { severity: 'info' | 'success' | 'warning' | 'error'; message: string };
 }
 

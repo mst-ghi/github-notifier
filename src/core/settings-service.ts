@@ -113,6 +113,20 @@ export function setNotificationCursor(at: Date): void {
     .run(at.toISOString(), nowIso());
 }
 
+/**
+ * Forgets how far the poller has read.
+ *
+ * Called when a repository is switched on: its existing threads are older than
+ * the cursor, so without this they would never be looked at again and the repo
+ * would stay silent until something new happened in it.
+ */
+export function clearNotificationCursor(): void {
+  getSettingsRow();
+  db.connection
+    .prepare('UPDATE settings SET last_notification_sync_at = NULL, updated_at = ? WHERE id = 1')
+    .run(nowIso());
+}
+
 export function getNotificationCursor(): Date | null {
   const value = getSettingsRow().last_notification_sync_at;
   if (!value) {

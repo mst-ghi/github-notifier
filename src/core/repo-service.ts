@@ -5,7 +5,7 @@ import { db, nowIso, toSqlBool } from './db/sqlite';
 import { type GithubApi, permissionFromRest } from './github-api';
 import { childLogger } from './logger';
 import { secrets } from './secrets';
-import { getSettings } from './settings-service';
+import { clearNotificationCursor, getSettings } from './settings-service';
 
 const log = childLogger('repos');
 
@@ -128,7 +128,16 @@ export function updateRepo(repoId: string, update: RepoUpdate): Repo {
 }
 
 export function setMonitoring(repoId: string, enabled: boolean): Repo {
-  return updateRepo(repoId, { monitoring: enabled });
+  const repo = updateRepo(repoId, { monitoring: enabled });
+  if (enabled) {
+    // Everything already sitting in this repo is older than the poller's
+    // cursor, so without a rewind the repo stays quiet until the next brand-new
+    // event. One extra request on the next tick is a fair price for a repo that
+    // reports its backlog the moment you switch it on.
+    clearNotificationCursor();
+    log.info({ repo: repo.fullName }, 'rewound the poll cursor to pick up existing activity');
+  }
+  return repo;
 }
 
 /**

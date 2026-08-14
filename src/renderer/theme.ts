@@ -6,13 +6,19 @@ import { createSystem, defaultConfig, defineConfig } from '@chakra-ui/react';
  */
 const config = defineConfig({
   globalCss: {
+    /*
+     * Every layer above the shell must be see-through, `html` included.
+     *
+     * Chakra's reset paints a background on `html`, which filled the corner
+     * notches behind the shell's border radius and made a rounded, transparent
+     * window look square. Setting it on `body` alone is not enough.
+     */
     'html, body, #root': {
       height: '100%',
-    },
-    // The window is frameless and transparent, so `body` must stay see-through
-    // for the rounded corners on the shell below it to be visible.
-    body: {
       bg: 'transparent',
+      backgroundColor: 'transparent',
+    },
+    body: {
       color: 'fg.default',
       overflow: 'hidden',
     },

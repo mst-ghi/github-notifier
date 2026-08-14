@@ -49,7 +49,7 @@ export interface ReleaseRef {
   publishedAt: string | null;
   body: string | null;
   prerelease: boolean;
-  assets: Array<{ name: string; browserDownloadUrl: string; size: number }>;
+  assets: Array<{ id: number; name: string; browserDownloadUrl: string; size: number }>;
 }
 
 export interface WebhookRef {
@@ -535,6 +535,7 @@ export class GithubApi {
       body: release.body ?? null,
       prerelease: release.prerelease,
       assets: release.assets.map((asset) => ({
+        id: asset.id,
         name: asset.name,
         browserDownloadUrl: asset.browser_download_url,
         size: asset.size,
@@ -612,6 +613,41 @@ export class GithubApi {
       active: created.data.active,
       events: created.data.events,
     };
+  }
+
+  /**
+   * Streams a release asset.
+   *
+   * Goes through the API rather than the browser URL because a private
+   * repository's assets are not publicly readable, and the API accepts the same
+   * token as everything else. Returns the raw response so the caller can report
+   * progress as the bytes arrive.
+   */
+  async downloadReleaseAsset(
+    owner: string,
+    repo: string,
+    assetId: number,
+    signal: AbortSignal
+  ): Promise<Response> {
+    const token = this.token;
+    if (!token) {
+      throw new AppError('NO_TOKEN', 'A GitHub token is needed to download the update.');
+    }
+    const response = await fetch(
+      `${GITHUB_API_BASE}/repos/${owner}/${repo}/releases/assets/${assetId}`,
+      {
+        headers: {
+          accept: 'application/octet-stream',
+          authorization: `Bearer ${token}`,
+          'user-agent': 'github-notifier',
+        },
+        signal,
+      }
+    );
+    if (!response.ok) {
+      throw new AppError('GITHUB_ERROR', `Download failed with HTTP ${response.status}.`);
+    }
+    return response;
   }
 
   async deleteWebhook(owner: string, repo: string, hookId: number): Promise<void> {

@@ -355,6 +355,32 @@ export interface UpdateInfo {
   error: string | null;
 }
 
+export type UpdateDownloadStatus =
+  | 'idle'
+  | 'downloading'
+  | 'verifying'
+  | 'done'
+  | 'error'
+  | 'cancelled';
+
+/** Progress of an in-app update download. */
+export interface UpdateDownload {
+  status: UpdateDownloadStatus;
+  version: string | null;
+  fileName: string | null;
+  /** Where the finished file landed, once it has. */
+  filePath: string | null;
+  receivedBytes: number;
+  /** 0 when the server did not send a length. */
+  totalBytes: number;
+  /** 0-100, or -1 when the total is unknown. */
+  percent: number;
+  bytesPerSecond: number;
+  /** True once the SHA-256 matched the published checksum. */
+  checksumVerified: boolean;
+  error: string | null;
+}
+
 /** Result of validating a token against the GitHub API. */
 export interface TokenValidation {
   valid: boolean;

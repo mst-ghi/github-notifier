@@ -6,6 +6,7 @@ import { logger } from '../core/logger';
 import { ensureAppDirs } from '../core/paths';
 import { secrets } from '../core/secrets';
 import { getSettings } from '../core/settings-service';
+import { updateDownloader } from '../core/update-downloader';
 import { APP_ID } from '../shared/constants';
 import { errorMessage } from '../shared/errors';
 import { broadcastUnread, registerIpcHandlers } from './ipc-handlers';
@@ -72,6 +73,11 @@ async function bootstrap(): Promise<void> {
   }
 
   registerIpcHandlers();
+
+  // The download runs in the main process; the window only renders its progress.
+  updateDownloader.on('progress', (progress) => {
+    sendToRenderer('event:updateDownload', progress);
+  });
 
   let startMinimized = false;
   try {

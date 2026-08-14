@@ -1,12 +1,14 @@
 import { Box, Flex, HStack, Icon, IconButton, Image, Text } from '@chakra-ui/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { LuMonitor, LuMoon, LuPause, LuPlay, LuSun } from 'react-icons/lu';
-import type { DaemonStatus } from '../../shared/types';
+import { LuMonitor, LuMoon, LuPause, LuPlay, LuSun, LuUser } from 'react-icons/lu';
+import { useLocation, useNavigate } from 'react-router-dom';
+import type { DaemonStatus, UpdateDownload } from '../../shared/types';
 import logoUrl from '../assets/logo.png';
 import { useIpcEvent } from '../hooks/useIpc';
 import { invoke } from '../lib/api';
 import { useColorMode } from './Provider';
 import { ResizeBorders } from './ResizeBorders';
+import { UpdateProgressChip } from './UpdateProgress';
 import { WindowControls } from './WindowControls';
 
 export interface WindowFrameProps {
@@ -15,6 +17,8 @@ export interface WindowFrameProps {
   onTogglePause: () => void;
   /** Hidden during setup, where pausing makes no sense yet. */
   showPauseButton?: boolean;
+  /** Hidden during setup, where there is no account to look at yet. */
+  showProfileButton?: boolean;
   /** Replaces the "Signed in as …" line. */
   subtitle?: string;
 }
@@ -32,16 +36,38 @@ export function WindowFrame({
   status,
   onTogglePause,
   showPauseButton = true,
+  showProfileButton = true,
   subtitle,
 }: WindowFrameProps): JSX.Element {
   const { resolved, preference, setColorMode } = useColorMode();
   const [maximized, setMaximized] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [download, setDownload] = useState<UpdateDownload | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const onProfile = location.pathname.startsWith('/profile');
+
+  // The avatar is the account, so it only appears once there is one.
+  useEffect(() => {
+    if (!showProfileButton || !status?.authenticatedAs) {
+      setAvatarUrl('');
+      return;
+    }
+    void invoke('profile:overview')
+      .then((overview) => setAvatarUrl(overview.user?.avatarUrl ?? ''))
+      .catch(() => undefined);
+  }, [showProfileButton, status?.authenticatedAs]);
 
   useEffect(() => {
     void invoke('window:isMaximized').then(setMaximized);
+    // A download started before this window opened should still show up.
+    void invoke('update:state')
+      .then(setDownload)
+      .catch(() => undefined);
   }, []);
   useIpcEvent('event:maximizeChanged', setMaximized);
+  useIpcEvent('event:updateDownload', setDownload);
 
   // Anything that overlays the app (the drawers) has to start below the
   // titlebar, or it covers the window controls. The height changes with the
@@ -63,6 +89,11 @@ export function WindowFrame({
     return () => observer.disconnect();
   }, []);
 
+  /*
+   * No CSS shadow on the shell: it fills the whole window, so a box-shadow is
+   * drawn entirely outside it and clipped away by the window edge. The drop
+   * shadow comes from the compositor via `hasShadow` on the BrowserWindow.
+   */
   const ColorModeIcon = preference === 'system' ? LuMonitor : resolved === 'dark' ? LuMoon : LuSun;
   const paused = status?.paused ?? false;
 
@@ -84,7 +115,6 @@ export function WindowFrame({
         borderWidth={maximized ? 0 : '1px'}
         borderColor="border.subtle"
         overflow="hidden"
-        boxShadow={maximized ? 'none' : 'window'}
       >
         <Flex
           as="header"
@@ -126,6 +156,9 @@ export function WindowFrame({
 
           <HStack gap={0} flexShrink={0} alignSelf="stretch">
             <HStack gap={1} pr={2} alignSelf="center">
+              {download ? (
+                <UpdateProgressChip state={download} onClick={() => navigate('/settings')} />
+              ) : null}
               {showPauseButton ? (
                 <IconButton
                   aria-label={paused ? 'Resume monitoring' : 'Pause monitoring'}
@@ -147,6 +180,30 @@ export function WindowFrame({
               >
                 <Icon as={ColorModeIcon} />
               </IconButton>
+
+              {showProfileButton && status?.authenticatedAs ? (
+                <IconButton
+                  aria-label={`Profile: ${status.authenticatedAs}`}
+                  title={`${status.authenticatedAs} — your pull requests and reviews`}
+                  variant="ghost"
+                  size="sm"
+                  bg={onProfile ? 'brand.muted' : undefined}
+                  onClick={() => navigate('/profile')}
+                >
+                  {avatarUrl ? (
+                    <Image
+                      src={avatarUrl}
+                      alt=""
+                      boxSize="20px"
+                      borderRadius="full"
+                      borderWidth={onProfile ? '1px' : 0}
+                      borderColor="brand.solid"
+                    />
+                  ) : (
+                    <Icon as={LuUser} />
+                  )}
+                </IconButton>
+              ) : null}
             </HStack>
 
             <Box w="1px" alignSelf="stretch" my={2} bg="border.subtle" />
@@ -178,6 +235,7 @@ export function SetupShell({
       status={status}
       onTogglePause={onTogglePause}
       showPauseButton={false}
+      showProfileButton={false}
       subtitle="Setup"
     >
       <Box flex="1" minH={0} overflowY="auto">

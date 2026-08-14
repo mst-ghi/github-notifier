@@ -7,6 +7,53 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **In-app update downloader.** The About tab downloads the new package itself,
+  with a progress bar, percentage, `31.9 MB of 76.0 MB · 3.3 MB/s` and a cancel
+  button. A compact chip appears in the header while it runs and turns green
+  when the file is ready. The bytes are hashed and compared against the
+  release's published `SHA256SUMS.txt`; a mismatch deletes the file. It saves
+  and stops there — installing a .deb needs root, so the app hands over a
+  verified file and the one command rather than running anything itself.
+- **Settings are grouped into five tabs** — Account, Notifications, Service,
+  History, About — instead of one long column.
+
+### Changed
+
+- The profile moved out of the sidebar: the avatar now sits in the header next
+  to the colour-mode toggle, and opens the profile page.
+- Notifications are no longer raised for pull requests that are already merged
+  or closed. Finished work is a remark, not a task. The state is looked up once
+  per pull request and cached for half an hour.
+
+### Fixed
+
+- **The poller lost every notification that existed before setup.** Its cursor
+  advanced to "now" on each tick even when nothing was recorded, so the first
+  run — which happens before any repository is being watched — skipped past all
+  existing activity for ever. The cursor now moves only as far as the newest
+  thread actually processed, and only once the batch has succeeded. Enabling a
+  repository rewinds it so the repo reports its backlog immediately.
+- **Comments were labelled "Assigned to you".** GitHub's `reason` says why you
+  are subscribed to a thread, not what happened in it, so a comment on a pull
+  request you were assigned kept `reason: assign`. Events are now classified
+  from `latest_comment_url`: conversation comments, review comments on the diff
+  and everything else are told apart correctly.
+- `onlyMyPullRequests` applies to the poller as well as to webhooks. The two
+  sources disagreed about what counted.
+- **A single search request could stall every other GitHub call.** The
+  rate-limit queue kept one quota with a fixed reserve of 100, sized for the
+  core budget of 5000; search reports a budget of 30, so a normal search looked
+  nearly exhausted and parked the queue until the reset. Quotas are tracked per
+  resource now, and the reserve scales to each budget.
+- **The window looked square despite its border radius.** Chakra's reset paints
+  a background on `html`, which filled the corner notches behind the rounded
+  shell. All three layers above the shell are transparent now.
+- Removed a `box-shadow` that could never render: the shell fills the window, so
+  the shadow fell entirely outside it and was clipped. The drop shadow comes
+  from the compositor.
+
 ## [2.1.0] - 2026-08-14
 
 ### Added

@@ -35,6 +35,7 @@ import {
 } from '../core/repo-service';
 import { secrets } from '../core/secrets';
 import { getSettings, setAuthenticatedUser, updateSettings } from '../core/settings-service';
+import { updateDownloader } from '../core/update-downloader';
 import { checkForUpdates } from '../core/updater';
 import { AppError } from '../shared/errors';
 import type { IpcArgs, IpcChannel, IpcResponse, IpcResult, TokenValidation } from '../shared/types';
@@ -255,6 +256,20 @@ const handlers: IpcHandlerMap = {
   },
 
   'app:checkForUpdates': () => checkForUpdates(app.getVersion(), github),
+
+  'update:download': () =>
+    updateDownloader.start(github, app.getPath('downloads'), app.getVersion()),
+
+  'update:cancel': () => updateDownloader.cancel(),
+  'update:state': () => updateDownloader.state,
+
+  'update:reveal': () => {
+    const { filePath } = updateDownloader.state;
+    if (filePath) {
+      shell.showItemInFolder(filePath);
+    }
+    return null;
+  },
 
   'app:dbConnected': () => db.isOpen,
 

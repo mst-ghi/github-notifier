@@ -1,6 +1,6 @@
-import { Badge, Box, Flex, HStack, Icon, Image, Separator, Stack, Text } from '@chakra-ui/react';
+import { Badge, Box, Flex, HStack, Icon, Separator, Stack, Text } from '@chakra-ui/react';
 import { type ReactNode, useEffect, useState } from 'react';
-import { LuBell, LuFolderGit2, LuSettings, LuTriangleAlert, LuUser } from 'react-icons/lu';
+import { LuBell, LuFolderGit2, LuSettings, LuTriangleAlert } from 'react-icons/lu';
 import { NavLink, useLocation } from 'react-router-dom';
 import { badgeText } from '../../shared/format';
 import type { DaemonStatus } from '../../shared/types';
@@ -16,8 +16,6 @@ interface NavItem {
   /** Neutral count, for totals that are informational rather than urgent. */
   info?: number;
   infoTitle?: string;
-  /** Shown instead of the icon, for the signed-in account. */
-  avatarUrl?: string;
 }
 
 export interface AppShellProps {
@@ -51,24 +49,12 @@ export function AppShell({
 }: AppShellProps): JSX.Element {
   const location = useLocation();
   const [version, setVersion] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
 
   useEffect(() => {
     void invoke('app:version')
       .then(setVersion)
       .catch(() => undefined);
   }, []);
-
-  // The avatar makes the sidebar entry read as "you" rather than as a generic
-  // settings page. Failing to load it just leaves the icon in place.
-  useEffect(() => {
-    if (!status?.authenticatedAs) {
-      return;
-    }
-    void invoke('profile:overview')
-      .then((overview) => setAvatarUrl(overview.user?.avatarUrl ?? ''))
-      .catch(() => undefined);
-  }, [status?.authenticatedAs]);
 
   const items: NavItem[] = [
     {
@@ -79,12 +65,6 @@ export function AppShell({
       infoTitle: 'Open pull requests across watched repositories',
     },
     { to: '/notifications', label: 'Notifications', icon: LuBell, badge: unread },
-    {
-      to: '/profile',
-      label: status?.authenticatedAs ?? 'Profile',
-      icon: LuUser,
-      avatarUrl,
-    },
     { to: '/settings', label: 'Settings', icon: LuSettings },
   ];
 
@@ -124,17 +104,7 @@ export function AppShell({
                   whiteSpace="nowrap"
                   transition="background 120ms"
                 >
-                  {item.avatarUrl ? (
-                    <Image
-                      src={item.avatarUrl}
-                      alt=""
-                      boxSize={4}
-                      borderRadius="full"
-                      flexShrink={0}
-                    />
-                  ) : (
-                    <Icon as={item.icon} boxSize={4} />
-                  )}
+                  <Icon as={item.icon} boxSize={4} />
                   <Text truncate>{item.label}</Text>
                   {item.badge ? (
                     <Badge colorPalette="red" variant="solid" borderRadius="full" ml="auto">
