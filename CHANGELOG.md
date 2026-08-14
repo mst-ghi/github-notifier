@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-14
+
 ### Added
 
 - **Repository pages.** Watched repositories now appear in their own "Active"
