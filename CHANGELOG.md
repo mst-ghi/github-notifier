@@ -7,6 +7,8 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-14
+
 ### Added
 
 - **In-app update downloader.** The About tab downloads the new package itself,
