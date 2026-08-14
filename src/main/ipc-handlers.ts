@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron';
+import { app, clipboard, ipcMain, shell } from 'electron';
 import { controlClient } from '../core/control-client';
 import { db } from '../core/db/sqlite';
 import { github } from '../core/github-api';
@@ -15,6 +15,16 @@ import {
   repoFacets,
   unreadCount,
 } from '../core/notification-service';
+import { getProfileOverview } from '../core/profile-service';
+import {
+  cachedCounts,
+  getPullRequestDetail,
+  getPullRequestDetailByRef,
+  getRepo,
+  listActiveRepos,
+  listOpenPullRequests,
+  refreshCounts,
+} from '../core/pull-request-service';
 import {
   installWebhook,
   listRepos,
@@ -143,6 +153,35 @@ const handlers: IpcHandlerMap = {
     return repo;
   },
 
+  'repos:get': (repoId) => getRepo(repoId),
+  'repos:listActive': () => listActiveRepos(),
+
+  /* --- pull requests --- */
+  'pulls:list': async (repoId) => {
+    const pulls = await listOpenPullRequests(github, repoId);
+    // Fetching the list also corrected the cached count, so push the new total.
+    sendToRenderer('event:pullCounts', cachedCounts());
+    return pulls;
+  },
+
+  'pulls:get': (repoId, number) => getPullRequestDetail(github, repoId, number),
+
+  'pulls:getByRef': (owner, repo, number) => getPullRequestDetailByRef(github, owner, repo, number),
+
+  /* --- profile --- */
+  'profile:overview': () => getProfileOverview(github),
+
+  'pulls:counts': async () => {
+    const counts = await refreshCounts(github);
+    return counts;
+  },
+
+  'pulls:refreshCounts': async () => {
+    const counts = await refreshCounts(github, { force: true });
+    sendToRenderer('event:pullCounts', counts);
+    return counts;
+  },
+
   /* --- notifications --- */
   'notifications:query': (query) => queryNotifications(query),
   'notifications:get': (id) => getNotification(id),
@@ -209,6 +248,11 @@ const handlers: IpcHandlerMap = {
   },
 
   'app:version': () => app.getVersion(),
+
+  'app:copyToClipboard': (text) => {
+    clipboard.writeText(text);
+    return null;
+  },
 
   'app:checkForUpdates': () => checkForUpdates(app.getVersion(), github),
 

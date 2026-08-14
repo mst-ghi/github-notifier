@@ -7,6 +7,51 @@ the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Repository pages.** Watched repositories now appear in their own "Active"
+  section, and opening one shows its details with every open pull request.
+- **Pull-request drawer.** Clicking a pull request opens a panel from the right
+  with the description, mergeable state, diff size, commits, comment counts and
+  head commit. Labels render in their real GitHub colours.
+- **Open pull-request counts** per repository and as a total in the sidebar.
+  Counting reads the `Link` header's last-page number, so it costs one request
+  per repository however many pull requests there are, and the result is cached
+  in the database so the total paints instantly on launch.
+- **First-run setup.** Three steps — connect an account, choose repositories,
+  start the service — drawn as a chain that mirrors the app's real architecture
+  and lights up from live state rather than from a "next" click, so it cannot
+  claim something works when it does not.
+- **Profile page.** Your account, token scopes and API quota, plus your open
+  pull requests and the ones waiting on your review. Both lists come from the
+  search API, so they span every repository the token can see rather than only
+  the watched ones.
+- **Version in the sidebar**, which also flags a mismatch when the window and
+  the background service are running different builds — they are separate
+  programs and are updated separately.
+
+### Changed
+
+- **Dark mode is matte black.** The palette was navy-tinted (chroma ~10); it is
+  now neutral (chroma 1–2), never pure black, with each surface a few percent
+  lighter than the last so the elevation steps stay readable.
+- Headings use a monospaced display face. This tool lives beside a terminal and
+  its own vocabulary is already monospaced.
+- The window chrome moved into a shared `WindowFrame`, so setup and the main
+  app cannot drift apart.
+
+### Fixed
+
+- **One search request could stall every other GitHub call.** The rate-limit
+  queue kept a single quota and a fixed reserve of 100, sized for the core
+  budget of 5000. GitHub's search endpoint reports a budget of 30, so a normal
+  search looked like an almost-exhausted quota and parked the queue until the
+  reset. Quotas are now tracked per resource, the reserve scales to each budget,
+  and the figure shown to the user is the core one.
+- Ligatures are off in code and commands: Fira Code rendered `--user` as a
+  single long dash, which reads as an em-dash in a command you have to type.
+- A second app instance no longer opens a database handle on its way out.
+
 ## [2.0.1] - 2026-08-13
 
 ### Fixed

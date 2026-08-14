@@ -3,11 +3,15 @@ import { GITHUB_API_BASE } from '../shared/constants';
 import { AppError, errorMessage, errorStatus } from '../shared/errors';
 import {
   type GithubNotificationThread,
+  type GithubProfile,
   type GithubUser,
   type MergeableState,
+  type PullRequestDetail,
   type PullRequestSnapshot,
+  type PullRequestSummary,
   type RepoPermission,
   SUBSCRIBED_WEBHOOK_EVENTS,
+  type SearchedPullRequest,
   type TokenValidation,
 } from '../shared/types';
 import { childLogger } from './logger';
@@ -325,6 +329,194 @@ export class GithubApi {
   }
 
   /* ---------------------------------------------------------------- */
+  /* Profile                                                           */
+  /* ---------------------------------------------------------------- */
+
+  /** Full profile of the authenticated user. */
+  async getProfile(): Promise<GithubProfile> {
+    const octokit = this.client();
+    const response = await this.queue.add('getProfile', () =>
+      octokit.rest.users.getAuthenticated()
+    );
+    const user = response.data;
+    return {
+      login: user.login,
+      name: user.name ?? null,
+      avatarUrl: user.avatar_url,
+      htmlUrl: user.html_url,
+      bio: user.bio ?? null,
+      company: user.company ?? null,
+      location: user.location ?? null,
+      blog: user.blog && user.blog.length > 0 ? user.blog : null,
+      followers: user.followers,
+      following: user.following,
+      publicRepos: user.public_repos,
+      createdAt: user.created_at,
+    };
+  }
+
+  /**
+   * Pull requests matching a search query, across every repository the token
+   * can see.
+   *
+   * Search is a separate, much smaller quota (30 requests a minute), so the
+   * profile page asks for two queries and no more.
+   */
+  async searchPullRequests(query: string, limit = 30): Promise<SearchedPullRequest[]> {
+    const octokit = this.client();
+    const response = await this.queue.add(`search:${query}`, () =>
+      octokit.rest.search.issuesAndPullRequests({
+        q: query,
+        per_page: limit,
+        sort: 'updated',
+        order: 'desc',
+      })
+    );
+
+    return response.data.items.map((item) => {
+      // `repository_url` is the only place the repo appears on a search hit.
+      const parts = item.repository_url.split('/');
+      const repo = parts.pop() ?? '';
+      const owner = parts.pop() ?? '';
+      return {
+        id: item.id,
+        number: item.number,
+        title: item.title,
+        htmlUrl: item.html_url,
+        repoFullName: `${owner}/${repo}`,
+        owner,
+        repo,
+        draft: item.draft ?? false,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        authorLogin: item.user?.login ?? 'unknown',
+        authorAvatarUrl: item.user?.avatar_url ?? '',
+        labels: item.labels.map((label) => ({
+          name: typeof label === 'string' ? label : (label.name ?? ''),
+          color: typeof label === 'string' ? '888888' : (label.color ?? '888888'),
+        })),
+        comments: item.comments,
+      };
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Pull requests for the repository page                             */
+  /* ---------------------------------------------------------------- */
+
+  /** Open pull requests with the fields needed to render a list row. */
+  async listOpenPullRequestsDetailed(
+    owner: string,
+    repo: string,
+    viewerLogin: string
+  ): Promise<PullRequestSummary[]> {
+    const octokit = this.client();
+    const pulls = (await this.queue.add(`openPulls:${owner}/${repo}`, () =>
+      octokit.paginate(octokit.rest.pulls.list, {
+        owner,
+        repo,
+        state: 'open',
+        per_page: 100,
+        sort: 'updated',
+        direction: 'desc',
+      })
+    )) as RestPullListItem[];
+
+    return pulls.map((pull) => ({
+      id: pull.id,
+      number: pull.number,
+      title: pull.title,
+      htmlUrl: pull.html_url,
+      draft: pull.draft ?? false,
+      authorLogin: pull.user?.login ?? 'unknown',
+      authorAvatarUrl: pull.user?.avatar_url ?? '',
+      createdAt: pull.created_at,
+      updatedAt: pull.updated_at,
+      baseRef: pull.base.ref,
+      headRef: pull.head.ref,
+      labels: (pull.labels ?? []).map((label) => ({
+        name: label.name,
+        color: label.color ?? '888888',
+      })),
+      assignees: (pull.assignees ?? []).map((user) => user.login),
+      requestedReviewers: (pull.requested_reviewers ?? []).map((user) => user.login),
+      isMine: pull.user?.login === viewerLogin,
+    }));
+  }
+
+  /**
+   * Counts open pull requests without downloading them.
+   *
+   * Asks for a single item and reads the last-page number out of the `Link`
+   * header, so a repo with 300 open pull requests still costs one request. When
+   * there is no `Link` header the result fits on one page, so the row count is
+   * the answer.
+   */
+  async countOpenPullRequests(owner: string, repo: string): Promise<number> {
+    const octokit = this.client();
+    const response = await this.queue.add(`countPulls:${owner}/${repo}`, () =>
+      octokit.rest.pulls.list({ owner, repo, state: 'open', per_page: 1 })
+    );
+
+    const link = response.headers.link;
+    if (typeof link === 'string') {
+      const match = /[?&]page=(\d+)>; rel="last"/.exec(link);
+      if (match?.[1]) {
+        return Number.parseInt(match[1], 10);
+      }
+    }
+    return response.data.length;
+  }
+
+  /** Full detail for one pull request, including body and diff size. */
+  async getPullRequestDetail(
+    owner: string,
+    repo: string,
+    number: number,
+    viewerLogin: string
+  ): Promise<PullRequestDetail> {
+    const octokit = this.client();
+    const response = await this.queue.add(`pullDetail:${owner}/${repo}#${number}`, () =>
+      octokit.rest.pulls.get({ owner, repo, pull_number: number })
+    );
+    const pull = response.data;
+
+    return {
+      id: pull.id,
+      number: pull.number,
+      title: pull.title,
+      htmlUrl: pull.html_url,
+      draft: pull.draft ?? false,
+      authorLogin: pull.user?.login ?? 'unknown',
+      authorAvatarUrl: pull.user?.avatar_url ?? '',
+      createdAt: pull.created_at,
+      updatedAt: pull.updated_at,
+      baseRef: pull.base.ref,
+      headRef: pull.head.ref,
+      labels: pull.labels.map((label) => ({ name: label.name, color: label.color ?? '888888' })),
+      assignees: (pull.assignees ?? []).map((user) => user.login),
+      requestedReviewers: (pull.requested_reviewers ?? []).map((user) => user.login),
+      isMine: pull.user?.login === viewerLogin,
+      body: pull.body ?? null,
+      state: pull.state === 'closed' ? 'closed' : 'open',
+      merged: pull.merged ?? false,
+      mergeable: pull.mergeable ?? null,
+      mergeableState: pull.mergeable_state ?? 'unknown',
+      additions: pull.additions,
+      deletions: pull.deletions,
+      changedFiles: pull.changed_files,
+      commits: pull.commits,
+      comments: pull.comments,
+      reviewComments: pull.review_comments,
+      headSha: pull.head.sha,
+      milestone: pull.milestone?.title ?? null,
+      closedAt: pull.closed_at,
+      mergedAt: pull.merged_at,
+      repoFullName: `${owner}/${repo}`,
+    };
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Releases                                                          */
   /* ---------------------------------------------------------------- */
 
@@ -456,6 +648,23 @@ export function permissionFromRest(repo: RestRepository): RepoPermission {
     return 'triage';
   }
   return 'read';
+}
+
+/** Shape of one entry from `GET /repos/{owner}/{repo}/pulls`. */
+interface RestPullListItem {
+  id: number;
+  number: number;
+  title: string;
+  html_url: string;
+  draft?: boolean;
+  user?: { login?: string; avatar_url?: string } | null;
+  created_at: string;
+  updated_at: string;
+  base: { ref: string };
+  head: { ref: string };
+  labels?: Array<{ name: string; color?: string }>;
+  assignees?: Array<{ login: string }> | null;
+  requested_reviewers?: Array<{ login: string }> | null;
 }
 
 export type { RestRepository };

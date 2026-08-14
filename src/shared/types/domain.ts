@@ -54,6 +54,9 @@ export interface Repo {
   webhookLastError: string | null;
   lastSyncedAt: string | null;
   lastEventAt: string | null;
+  /** Cached count of open pull requests. Refreshed for monitored repos only. */
+  openPrCount: number;
+  openPrSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -162,6 +165,8 @@ export interface AppSettings {
   hasToken: boolean;
   /** True once a webhook secret has been stored in the keyring. */
   hasWebhookSecret: boolean;
+  /** False until the user finishes (or skips) first-run setup. */
+  onboardingCompleted: boolean;
   updatedAt: string;
 }
 
@@ -169,6 +174,123 @@ export interface AppSettings {
 export type AppSettingsUpdate = Partial<
   Omit<AppSettings, 'hasToken' | 'hasWebhookSecret' | 'userId' | 'updatedAt'>
 >;
+
+/* ------------------------------------------------------------------ */
+/* Pull requests                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface PullRequestLabel {
+  name: string;
+  /** Six hex digits, no leading '#', exactly as GitHub returns it. */
+  color: string;
+}
+
+/** What the list endpoint gives us. Enough to render a row. */
+export interface PullRequestSummary {
+  id: number;
+  number: number;
+  title: string;
+  htmlUrl: string;
+  draft: boolean;
+  authorLogin: string;
+  authorAvatarUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  baseRef: string;
+  headRef: string;
+  labels: PullRequestLabel[];
+  assignees: string[];
+  requestedReviewers: string[];
+  /** True when the authenticated user opened it. */
+  isMine: boolean;
+}
+
+/**
+ * The single-PR endpoint adds everything the list omits: the description, the
+ * diff size, and `mergeable`, which is the only way to detect a conflict.
+ */
+export interface PullRequestDetail extends PullRequestSummary {
+  body: string | null;
+  state: 'open' | 'closed';
+  merged: boolean;
+  mergeable: boolean | null;
+  mergeableState: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commits: number;
+  comments: number;
+  reviewComments: number;
+  headSha: string;
+  milestone: string | null;
+  closedAt: string | null;
+  mergedAt: string | null;
+  repoFullName: string;
+}
+
+/** Open pull-request totals for the sidebar. */
+export interface OpenPullRequestCounts {
+  /** Sum across monitored repositories. */
+  total: number;
+  /** Repo row id -> open pull requests. */
+  byRepoId: Record<string, number>;
+  refreshedAt: string | null;
+  /** True when the numbers came from cache and a refresh is due. */
+  stale: boolean;
+  error: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Profile                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface GithubProfile {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  htmlUrl: string;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  followers: number;
+  following: number;
+  publicRepos: number;
+  createdAt: string;
+}
+
+/**
+ * A pull request found through search, which spans every repository the token
+ * can see rather than only the watched ones.
+ */
+export interface SearchedPullRequest {
+  id: number;
+  number: number;
+  title: string;
+  htmlUrl: string;
+  repoFullName: string;
+  owner: string;
+  repo: string;
+  draft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  authorLogin: string;
+  authorAvatarUrl: string;
+  labels: PullRequestLabel[];
+  comments: number;
+}
+
+/** Everything the profile page shows, gathered in one round of API calls. */
+export interface ProfileOverview {
+  user: GithubProfile | null;
+  /** Open pull requests you opened, newest first. */
+  authored: SearchedPullRequest[];
+  /** Open pull requests waiting on your review. */
+  reviewRequested: SearchedPullRequest[];
+  scopes: string[];
+  rateLimit: RateLimitInfo | null;
+  error: string | null;
+}
 
 /* ------------------------------------------------------------------ */
 /* Runtime status                                                      */

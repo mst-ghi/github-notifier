@@ -60,3 +60,15 @@
   color: #ffffff;
   opacity: 1;
 }
+
+/*
+ * Fira Code's ligatures turn `--` into a single long dash, which in a command
+ * the user has to type reads as an em-dash. Anything quoting literal text —
+ * commands, SHAs, branch names — opts out; prose headings keep them.
+ */
+code,
+kbd,
+samp,
+pre {
+  font-variant-ligatures: none;
+}

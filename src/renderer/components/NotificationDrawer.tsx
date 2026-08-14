@@ -103,7 +103,7 @@ export function NotificationDrawer({
         bg="bg.surface"
         borderLeftWidth="1px"
         borderColor="border.subtle"
-        boxShadow="-12px 0 32px rgba(0, 0, 0, 0.28)"
+        boxShadow="-14px 0 40px rgba(0, 0, 0, 0.45)"
         zIndex={31}
         as="section"
         aria-label="Notification details"

@@ -16,12 +16,20 @@ import {
   LuChevronDown,
   LuChevronRight,
   LuExternalLink,
+  LuGitPullRequest,
+  LuChevronRight as LuGoTo,
   LuLock,
   LuRefreshCw,
   LuWebhook,
 } from 'react-icons/lu';
+import { useNavigate } from 'react-router-dom';
 import { relativeTime } from '../../shared/format';
-import type { DaemonStatus, Repo, RepoEventFilters } from '../../shared/types';
+import type {
+  DaemonStatus,
+  OpenPullRequestCounts,
+  Repo,
+  RepoEventFilters,
+} from '../../shared/types';
 import {
   Card,
   EmptyState,
@@ -45,12 +53,18 @@ const FILTER_LABELS: Array<{ key: keyof RepoEventFilters; label: string; hint: s
 
 export interface RepositoriesPageProps {
   status: DaemonStatus | null;
-  /** This window's own MongoDB connection, not the daemon's. */
+  /** This window's own database connection, not the daemon's. */
   dbConnected: boolean;
+  counts: OpenPullRequestCounts | null;
 }
 
-export function RepositoriesPage({ status, dbConnected }: RepositoriesPageProps): JSX.Element {
+export function RepositoriesPage({
+  status,
+  dbConnected,
+  counts,
+}: RepositoriesPageProps): JSX.Element {
   const toast = useToast();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -71,7 +85,12 @@ export function RepositoriesPage({ status, dbConnected }: RepositoriesPageProps)
     );
   }, [repos, debouncedSearch]);
 
+  // Watched repositories get their own section at the top: they are the ones
+  // the app actually does anything with, and the full list runs to hundreds.
+  const active = useMemo(() => visible.filter((repo) => repo.monitoring), [visible]);
+  const inactive = useMemo(() => visible.filter((repo) => !repo.monitoring), [visible]);
   const monitoredCount = repos.filter((repo) => repo.monitoring).length;
+  const openPrTotal = counts?.total ?? 0;
 
   const replaceRepo = (updated: Repo): void => {
     setData(repos.map((repo) => (repo.id === updated.id ? updated : repo)));
@@ -134,6 +153,175 @@ export function RepositoriesPage({ status, dbConnected }: RepositoriesPageProps)
     }
   };
 
+  /**
+   * One repository card. `isActive` rows show their open pull-request count and
+   * open the detail page when clicked; the rest are just switches.
+   */
+  const renderRepo = (repo: Repo, isActive: boolean): JSX.Element => {
+    const isOpen = expanded === repo.id;
+    const openPrs = counts?.byRepoId[repo.id] ?? repo.openPrCount;
+
+    return (
+      <Card key={repo.id} borderColor={isActive ? 'brand.emphasized' : 'border.subtle'}>
+        <Flex
+          align={{ base: 'flex-start', md: 'center' }}
+          direction={{ base: 'column', md: 'row' }}
+          gap={3}
+          px={4}
+          py={3}
+        >
+          <Box
+            flex="1"
+            minW={0}
+            cursor={isActive ? 'pointer' : 'default'}
+            title={isActive ? 'Open this repository' : undefined}
+            onClick={isActive ? () => navigate(`/repos/${repo.id}`) : undefined}
+          >
+            <HStack gap={2} flexWrap="wrap">
+              <Text
+                fontWeight="600"
+                fontSize="sm"
+                _hover={isActive ? { color: 'brand.fg' } : undefined}
+              >
+                {repo.fullName}
+              </Text>
+              {repo.private ? (
+                <Box as="span" title="Private repository" display="inline-flex">
+                  <Icon as={LuLock} boxSize={3} color="fg.subtle" />
+                </Box>
+              ) : null}
+              {repo.archived ? (
+                <Badge size="sm" colorPalette="gray">
+                  archived
+                </Badge>
+              ) : null}
+              {repo.webhookStatus === 'active' ? (
+                <Badge size="sm" colorPalette="green">
+                  webhook
+                </Badge>
+              ) : null}
+              {isActive ? (
+                <Badge
+                  size="sm"
+                  colorPalette={openPrs > 0 ? 'brand' : 'gray'}
+                  variant={openPrs > 0 ? 'solid' : 'subtle'}
+                  borderRadius="full"
+                  title="Open pull requests"
+                >
+                  <Icon as={LuGitPullRequest} boxSize={3} mr={1} />
+                  {openPrs}
+                </Badge>
+              ) : null}
+            </HStack>
+            <Text fontSize="xs" color="fg.subtle" truncate mt={0.5}>
+              {repo.description ?? 'No description'}
+            </Text>
+            {repo.lastEventAt ? (
+              <Text fontSize="xs" color="fg.subtle" mt={1}>
+                Last event {relativeTime(repo.lastEventAt)}
+              </Text>
+            ) : null}
+          </Box>
+
+          <HStack gap={2} flexShrink={0} alignSelf={{ base: 'flex-end', md: 'center' }}>
+            {isActive ? (
+              <IconButton
+                aria-label="Open repository"
+                title="Open this repository"
+                size="sm"
+                variant="ghost"
+                colorPalette="brand"
+                onClick={() => navigate(`/repos/${repo.id}`)}
+              >
+                <Icon as={LuGoTo} />
+              </IconButton>
+            ) : null}
+            <IconButton
+              aria-label="Open on GitHub"
+              title="Open on GitHub"
+              size="sm"
+              variant="ghost"
+              onClick={() => openExternal(repo.htmlUrl)}
+            >
+              <Icon as={LuExternalLink} />
+            </IconButton>
+            <IconButton
+              aria-label={repo.webhookId === null ? 'Install webhook' : 'Remove webhook'}
+              title={
+                repo.permission !== 'admin'
+                  ? 'Admin permission is required to manage webhooks'
+                  : repo.webhookId === null
+                    ? 'Install webhook'
+                    : 'Remove webhook'
+              }
+              size="sm"
+              variant="ghost"
+              disabled={repo.permission !== 'admin'}
+              colorPalette={repo.webhookId === null ? 'gray' : 'green'}
+              onClick={() => void handleWebhook(repo)}
+            >
+              <Icon as={LuWebhook} />
+            </IconButton>
+            <IconButton
+              aria-label={isOpen ? 'Hide event filters' : 'Show event filters'}
+              size="sm"
+              variant="ghost"
+              onClick={() => setExpanded(isOpen ? null : repo.id)}
+            >
+              <Icon as={isOpen ? LuChevronDown : LuChevronRight} />
+            </IconButton>
+            <Switch.Root
+              checked={repo.monitoring}
+              onCheckedChange={(details) => void handleToggle(repo, details.checked)}
+              colorPalette="brand"
+              size="md"
+            >
+              <Switch.HiddenInput />
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch.Root>
+          </HStack>
+        </Flex>
+
+        {isOpen ? (
+          <Box px={4} py={3} borderTopWidth="1px" borderColor="border.subtle" bg="bg.raised">
+            <Text fontSize="xs" color="fg.subtle" mb={3}>
+              Choose which events raise a notification for {repo.name}.
+            </Text>
+            <Stack
+              direction="row"
+              flexWrap="wrap"
+              gap={{ base: 3, md: 5 }}
+              opacity={repo.monitoring ? 1 : 0.5}
+            >
+              {FILTER_LABELS.map((filter) => (
+                <Switch.Root
+                  key={filter.key}
+                  checked={repo.eventFilters[filter.key]}
+                  disabled={!repo.monitoring}
+                  onCheckedChange={(details) =>
+                    void handleFilter(repo, filter.key, details.checked)
+                  }
+                  colorPalette="brand"
+                  size="sm"
+                >
+                  <Switch.HiddenInput />
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                  <Switch.Label fontSize="sm" title={filter.hint}>
+                    {filter.label}
+                  </Switch.Label>
+                </Switch.Root>
+              ))}
+            </Stack>
+          </Box>
+        ) : null}
+      </Card>
+    );
+  };
+
   if (loading && repos.length === 0) {
     return <LoadingBlock label="Loading repositories…" />;
   }
@@ -192,147 +380,38 @@ export function RepositoriesPage({ status, dbConnected }: RepositoriesPageProps)
           }
         />
       ) : (
-        <Stack gap={2}>
-          {visible.map((repo) => {
-            const isOpen = expanded === repo.id;
-            return (
-              <Card key={repo.id}>
-                <Flex
-                  align={{ base: 'flex-start', md: 'center' }}
-                  direction={{ base: 'column', md: 'row' }}
-                  gap={3}
-                  px={4}
-                  py={3}
-                >
-                  <Box flex="1" minW={0}>
-                    <HStack gap={2} flexWrap="wrap">
-                      <Text
-                        fontWeight="600"
-                        fontSize="sm"
-                        cursor="pointer"
-                        _hover={{ color: 'brand.fg', textDecoration: 'underline' }}
-                        onClick={() => openExternal(repo.htmlUrl)}
-                      >
-                        {repo.fullName}
-                      </Text>
-                      {repo.private ? (
-                        <Box as="span" title="Private repository" display="inline-flex">
-                          <Icon as={LuLock} boxSize={3} color="fg.subtle" />
-                        </Box>
-                      ) : null}
-                      {repo.archived ? (
-                        <Badge size="sm" colorPalette="gray">
-                          archived
-                        </Badge>
-                      ) : null}
-                      {repo.webhookStatus === 'active' ? (
-                        <Badge size="sm" colorPalette="green">
-                          webhook
-                        </Badge>
-                      ) : null}
-                    </HStack>
-                    <Text fontSize="xs" color="fg.subtle" truncate mt={0.5}>
-                      {repo.description ?? 'No description'}
-                    </Text>
-                    {repo.lastEventAt ? (
-                      <Text fontSize="xs" color="fg.subtle" mt={1}>
-                        Last event {relativeTime(repo.lastEventAt)}
-                      </Text>
-                    ) : null}
-                  </Box>
-
-                  <HStack gap={2} flexShrink={0} alignSelf={{ base: 'flex-end', md: 'center' }}>
-                    <IconButton
-                      aria-label="Open on GitHub"
-                      title="Open on GitHub"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openExternal(repo.htmlUrl)}
-                    >
-                      <Icon as={LuExternalLink} />
-                    </IconButton>
-                    <IconButton
-                      aria-label={repo.webhookId === null ? 'Install webhook' : 'Remove webhook'}
-                      title={
-                        repo.permission !== 'admin'
-                          ? 'Admin permission is required to manage webhooks'
-                          : repo.webhookId === null
-                            ? 'Install webhook'
-                            : 'Remove webhook'
-                      }
-                      size="sm"
-                      variant="ghost"
-                      disabled={repo.permission !== 'admin'}
-                      colorPalette={repo.webhookId === null ? 'gray' : 'green'}
-                      onClick={() => void handleWebhook(repo)}
-                    >
-                      <Icon as={LuWebhook} />
-                    </IconButton>
-                    <IconButton
-                      aria-label={isOpen ? 'Hide event filters' : 'Show event filters'}
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setExpanded(isOpen ? null : repo.id)}
-                    >
-                      <Icon as={isOpen ? LuChevronDown : LuChevronRight} />
-                    </IconButton>
-                    <Switch.Root
-                      checked={repo.monitoring}
-                      onCheckedChange={(details) => void handleToggle(repo, details.checked)}
-                      colorPalette="brand"
-                      size="md"
-                    >
-                      <Switch.HiddenInput />
-                      <Switch.Control>
-                        <Switch.Thumb />
-                      </Switch.Control>
-                    </Switch.Root>
+        <Stack gap={6}>
+          {active.length > 0 ? (
+            <Box>
+              <HStack gap={2} mb={2}>
+                <Text fontSize="sm" fontWeight="700">
+                  Active
+                </Text>
+                <Badge colorPalette="green" borderRadius="full">
+                  {active.length}
+                </Badge>
+                {openPrTotal > 0 ? (
+                  <HStack gap={1} color="fg.subtle">
+                    <Icon as={LuGitPullRequest} boxSize={3.5} />
+                    <Text fontSize="xs">{openPrTotal} open pull requests in total</Text>
                   </HStack>
-                </Flex>
-
-                {isOpen ? (
-                  <Box
-                    px={4}
-                    py={3}
-                    borderTopWidth="1px"
-                    borderColor="border.subtle"
-                    bg="bg.raised"
-                  >
-                    <Text fontSize="xs" color="fg.subtle" mb={3}>
-                      Choose which events raise a notification for {repo.name}.
-                    </Text>
-                    <Stack
-                      direction="row"
-                      flexWrap="wrap"
-                      gap={{ base: 3, md: 5 }}
-                      opacity={repo.monitoring ? 1 : 0.5}
-                    >
-                      {FILTER_LABELS.map((filter) => (
-                        <Switch.Root
-                          key={filter.key}
-                          checked={repo.eventFilters[filter.key]}
-                          disabled={!repo.monitoring}
-                          onCheckedChange={(details) =>
-                            void handleFilter(repo, filter.key, details.checked)
-                          }
-                          colorPalette="brand"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                          <Switch.Label fontSize="sm" title={filter.hint}>
-                            {filter.label}
-                          </Switch.Label>
-                        </Switch.Root>
-                      ))}
-                    </Stack>
-                  </Box>
                 ) : null}
-              </Card>
-            );
-          })}
+              </HStack>
+              <Stack gap={2}>{active.map((repo) => renderRepo(repo, true))}</Stack>
+            </Box>
+          ) : null}
+
+          {inactive.length > 0 ? (
+            <Box>
+              <HStack gap={2} mb={2}>
+                <Text fontSize="sm" fontWeight="700">
+                  {active.length > 0 ? 'Not watched' : 'All repositories'}
+                </Text>
+                <Badge borderRadius="full">{inactive.length}</Badge>
+              </HStack>
+              <Stack gap={2}>{inactive.map((repo) => renderRepo(repo, false))}</Stack>
+            </Box>
+          ) : null}
         </Stack>
       )}
 

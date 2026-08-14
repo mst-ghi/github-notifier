@@ -34,6 +34,7 @@ export interface SettingsRow {
   retention_days: number;
   theme: string;
   last_notification_sync_at: string | null;
+  onboarding_completed: number;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +64,8 @@ export interface RepoRow {
   last_synced_at: string | null;
   last_event_at: string | null;
   last_conflict_scan_at: string | null;
+  open_pr_count: number;
+  open_pr_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +133,8 @@ export function toRepoDto(row: RepoRow): Repo {
     webhookLastError: row.webhook_last_error,
     lastSyncedAt: row.last_synced_at,
     lastEventAt: row.last_event_at,
+    openPrCount: row.open_pr_count,
+    openPrSyncedAt: row.open_pr_synced_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -180,6 +185,7 @@ export function toSettingsDto(
     theme: row.theme === 'light' || row.theme === 'dark' ? row.theme : 'system',
     hasToken: flags.hasToken,
     hasWebhookSecret: flags.hasWebhookSecret,
+    onboardingCompleted: fromSqlBool(row.onboarding_completed),
     updatedAt: row.updated_at,
   };
 }

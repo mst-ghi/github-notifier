@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import './window-chrome.css';
+import './onboarding.css';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import { App } from './App';

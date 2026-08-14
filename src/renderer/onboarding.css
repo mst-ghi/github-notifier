@@ -1,0 +1,67 @@
+/*
+ * Setup-flow motion.
+ *
+ * One orchestrated moment only: a link in the chain drawing itself when that
+ * step completes. Everything else in the flow is static, so the connection is
+ * the thing the eye follows.
+ */
+
+@keyframes chain-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes chain-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.chain-link {
+  transform-origin: left center;
+}
+
+.chain-link--done {
+  animation: chain-draw 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chain-node--done {
+  animation: chain-pop 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.step-panel {
+  animation: step-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* A setup flow is exactly where someone sensitive to motion will be. */
+@media (prefers-reduced-motion: reduce) {
+  .chain-link--done,
+  .chain-node--done,
+  .step-panel {
+    animation: none;
+  }
+}

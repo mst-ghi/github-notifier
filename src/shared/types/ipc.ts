@@ -6,6 +6,10 @@ import type {
   NotificationPage,
   NotificationQuery,
   NotificationStats,
+  OpenPullRequestCounts,
+  ProfileOverview,
+  PullRequestDetail,
+  PullRequestSummary,
   Repo,
   RepoUpdate,
   TokenValidation,
@@ -44,6 +48,28 @@ export interface IpcRequestMap {
   /** Creates or repairs the GitHub webhook for a repo. */
   'repos:installWebhook': { args: [repoId: string]; result: Repo };
   'repos:removeWebhook': { args: [repoId: string]; result: Repo };
+  /** One repository by row id, for the detail page. */
+  'repos:get': { args: [repoId: string]; result: Repo };
+  /** Monitored repositories only. */
+  'repos:listActive': { args: []; result: Repo[] };
+
+  /* --- pull requests --- */
+  'pulls:list': { args: [repoId: string]; result: PullRequestSummary[] };
+  'pulls:get': { args: [repoId: string, number: number]; result: PullRequestDetail };
+  /**
+   * Detail by owner/repo/number, for pull requests found through search that
+   * may live in a repository the app does not track locally.
+   */
+  'pulls:getByRef': {
+    args: [owner: string, repo: string, number: number];
+    result: PullRequestDetail;
+  };
+  /** Cached totals, refreshed only when older than a few minutes. */
+  'pulls:counts': { args: []; result: OpenPullRequestCounts };
+  'pulls:refreshCounts': { args: []; result: OpenPullRequestCounts };
+
+  /* --- profile --- */
+  'profile:overview': { args: []; result: ProfileOverview };
 
   /* --- notifications --- */
   'notifications:query': { args: [query: NotificationQuery]; result: NotificationPage };
@@ -73,6 +99,8 @@ export interface IpcRequestMap {
   /* --- shell --- */
   'shell:openExternal': { args: [url: string]; result: null };
   'app:version': { args: []; result: string };
+  /** Copies text to the system clipboard, for the setup commands. */
+  'app:copyToClipboard': { args: [text: string]; result: null };
   /** Asks GitHub whether a newer release exists. Never installs anything. */
   'app:checkForUpdates': { args: []; result: UpdateInfo };
   /**
@@ -106,6 +134,8 @@ export interface IpcEventMap {
   'event:unreadCount': number;
   'event:status': DaemonStatus;
   'event:reposChanged': Repo[];
+  /** Pushed when the open pull-request totals change. */
+  'event:pullCounts': OpenPullRequestCounts;
   'event:navigate': { route: '/' | '/notifications' | '/settings' };
   /** Pushed whenever the window is maximised or restored. */
   'event:maximizeChanged': boolean;

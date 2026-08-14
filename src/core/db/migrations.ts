@@ -105,6 +105,32 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'cache open pull-request counts per repository',
+    up: (db) => {
+      db.exec(`
+        -- Cached so the sidebar total renders instantly instead of waiting on
+        -- one GitHub round-trip per monitored repository.
+        ALTER TABLE repos ADD COLUMN open_pr_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE repos ADD COLUMN open_pr_synced_at TEXT;
+      `);
+    },
+  },
+  {
+    version: 3,
+    name: 'remember whether setup was completed',
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE settings ADD COLUMN onboarding_completed INTEGER NOT NULL DEFAULT 0;
+      `);
+      // An existing install already has a token, so it has effectively been
+      // through setup: do not send those users back to a welcome screen.
+      db.exec(`
+        UPDATE settings SET onboarding_completed = 1 WHERE user_id IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 export const LATEST_VERSION: number =

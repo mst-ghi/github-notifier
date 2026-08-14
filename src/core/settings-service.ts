@@ -25,6 +25,7 @@ const COLUMN_MAP: Readonly<
   startMinimized: ['start_minimized', (v: boolean) => toSqlBool(v)],
   retentionDays: ['retention_days', (v: number) => v],
   theme: ['theme', (v: string) => v],
+  onboardingCompleted: ['onboarding_completed', (v: boolean) => toSqlBool(v)],
 };
 
 /** Bounds that keep a bad value from disabling polling or hammering GitHub. */

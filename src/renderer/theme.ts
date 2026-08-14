@@ -44,10 +44,26 @@ const config = defineConfig({
       fonts: {
         heading: { value: 'Inter, "Noto Sans", system-ui, sans-serif' },
         body: { value: 'Inter, "Noto Sans", system-ui, sans-serif' },
-        mono: { value: '"JetBrains Mono", "DejaVu Sans Mono", monospace' },
+        mono: {
+          value: '"Fira Code", "JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", monospace',
+        },
+        /*
+         * The display face is monospaced on purpose. This is a tool that lives
+         * next to a terminal, and its own vernacular — branch names, SHAs,
+         * owner/repo — is already monospaced, so headings in the same voice
+         * read as part of the subject rather than as decoration.
+         */
+        display: {
+          value: '"Fira Code", "JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", monospace',
+        },
       },
       radii: {
         card: { value: '12px' },
+      },
+      shadows: {
+        // Deeper and softer than the default: a matte surface should absorb
+        // the shadow rather than let it ring around the window edge.
+        window: { value: '0 20px 56px rgba(0, 0, 0, 0.55)' },
       },
     },
     semanticTokens: {
@@ -61,18 +77,34 @@ const config = defineConfig({
           emphasized: { value: { base: '{colors.brand.200}', _dark: '{colors.brand.800}' } },
           focusRing: { value: { base: '{colors.brand.500}', _dark: '{colors.brand.400}' } },
         },
+        /*
+         * Dark mode is matte black: neutral greys with no hue, and never pure
+         * #000 — true black reads as glossy on an OLED panel and makes the
+         * elevation steps between surfaces invisible. Each step is a few
+         * percent lighter than the last, which is what gives the flat, powdery
+         * look rather than a shiny one.
+         */
         bg: {
-          canvas: { value: { base: '{colors.gray.50}', _dark: '#0d1017' } },
-          surface: { value: { base: 'white', _dark: '#141924' } },
-          raised: { value: { base: 'white', _dark: '#1b2130' } },
-          sidebar: { value: { base: 'white', _dark: '#10141d' } },
+          canvas: { value: { base: '{colors.gray.50}', _dark: '#0b0b0c' } },
+          surface: { value: { base: 'white', _dark: '#141415' } },
+          raised: { value: { base: 'white', _dark: '#1d1d1f' } },
+          sidebar: { value: { base: 'white', _dark: '#0e0e10' } },
         },
         fg: {
-          default: { value: { base: '{colors.gray.900}', _dark: '{colors.gray.100}' } },
-          subtle: { value: { base: '{colors.gray.600}', _dark: '{colors.gray.400}' } },
+          // Neutral off-white rather than Chakra's grays, which carry a blue
+          // cast that fights the matte surface.
+          default: { value: { base: '{colors.gray.900}', _dark: '#ededee' } },
+          subtle: { value: { base: '{colors.gray.600}', _dark: '#9c9ca0' } },
         },
         border: {
-          subtle: { value: { base: '{colors.gray.200}', _dark: '#232b3a' } },
+          subtle: { value: { base: '{colors.gray.200}', _dark: '#282829' } },
+        },
+        // GitHub's own green, because this is the colour the audience already
+        // reads as "this part is working".
+        success: {
+          solid: { value: { base: '#1a7f37', _dark: '#3fb950' } },
+          subtle: { value: { base: '#dafbe1', _dark: '#0f2915' } },
+          fg: { value: { base: '#1a7f37', _dark: '#56d364' } },
         },
       },
     },

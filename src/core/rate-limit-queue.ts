@@ -37,22 +37,44 @@ export class RateLimitQueue {
   private lastStartedAt = 0;
   /** Epoch ms. While in the future, no task is started. */
   private pausedUntil = 0;
-  private limit = 5000;
-  private remaining = 5000;
-  private resetAt: Date | null = null;
+  /**
+   * Quotas per GitHub resource.
+   *
+   * These are genuinely separate budgets: `core` allows 5000 requests an hour
+   * while `search` allows 30 a minute. Tracking a single number for both meant
+   * one search made the queue believe it was nearly out of quota and park every
+   * other request until the hourly reset.
+   */
+  private readonly quotas = new Map<string, { limit: number; remaining: number; resetAt: Date }>();
 
   constructor(options: QueueOptions = {}) {
     this.concurrency = options.concurrency ?? 2;
     this.minIntervalMs = options.minIntervalMs ?? 120;
   }
 
+  /** The core quota, which is the one worth showing a user. */
   get info(): RateLimitInfo {
+    const core = this.quotas.get('core');
     return {
-      limit: this.limit,
-      remaining: this.remaining,
-      resetAt: this.resetAt ? this.resetAt.toISOString() : null,
+      limit: core?.limit ?? 5000,
+      remaining: core?.remaining ?? 5000,
+      resetAt: core?.resetAt.toISOString() ?? null,
       queued: this.tasks.length + this.active,
     };
+  }
+
+  /** Every tracked quota, for diagnostics. */
+  get allQuotas(): Record<string, RateLimitInfo> {
+    const out: Record<string, RateLimitInfo> = {};
+    for (const [name, quota] of this.quotas) {
+      out[name] = {
+        limit: quota.limit,
+        remaining: quota.remaining,
+        resetAt: quota.resetAt.toISOString(),
+        queued: 0,
+      };
+    }
+    return out;
   }
 
   /** Feed the queue the rate-limit headers from every GitHub response. */
@@ -60,20 +82,25 @@ export class RateLimitQueue {
     const limit = numberHeader(headers['x-ratelimit-limit']);
     const remaining = numberHeader(headers['x-ratelimit-remaining']);
     const reset = numberHeader(headers['x-ratelimit-reset']);
+    const resource =
+      typeof headers['x-ratelimit-resource'] === 'string'
+        ? headers['x-ratelimit-resource']
+        : 'core';
 
-    if (limit !== null) {
-      this.limit = limit;
-    }
-    if (remaining !== null) {
-      this.remaining = remaining;
-    }
-    if (reset !== null) {
-      this.resetAt = new Date(reset * 1000);
+    if (limit === null || remaining === null || reset === null) {
+      return;
     }
 
-    if (remaining !== null && remaining < RATE_LIMIT_RESERVE && this.resetAt) {
-      const waitMs = Math.max(this.resetAt.getTime() - Date.now(), 0) + 1000;
-      this.pauseFor(waitMs, `rate limit low (${remaining} left)`);
+    const resetAt = new Date(reset * 1000);
+    this.quotas.set(resource, { limit, remaining, resetAt });
+
+    // The reserve has to scale with the budget: keeping 100 calls spare is
+    // prudent out of 5000 and impossible out of 30.
+    const reserve = resource === 'core' ? RATE_LIMIT_RESERVE : Math.max(2, Math.ceil(limit * 0.1));
+
+    if (remaining < reserve) {
+      const waitMs = Math.max(resetAt.getTime() - Date.now(), 0) + 1000;
+      this.pauseFor(waitMs, `${resource} quota low (${remaining}/${limit} left)`);
     }
   }
 
